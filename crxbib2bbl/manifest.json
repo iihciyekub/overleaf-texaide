@@ -1,0 +1,41 @@
+{
+    "manifest_version": 3,
+    "version": "2.68.29",
+    "name": "overleaf texAide",
+    "description": "提供 N 多宏命令辅助 texing;",
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://www.overleaf.com/project/*"
+            ],
+            "js": [
+                "js/public.js",
+                "js/thirdparty/opencc.js",
+                "js/thirdparty/cnchar.min.js",
+                "js/thirdparty/cnchat-trad.js",
+                "js/xbib.js",
+                "js/latex_macro/tikzPGF.json.js",
+                "js/gui/init.js",
+                "js/gui/add.menu.js",
+                "js/gui/add.home.js",
+                "js/gui/add.s2t.js",
+                "js/gui/add.bib2bbl.js",
+                "js/gui/add.TikZ-PGF.js",
+                "js/gui/add.colorlib.js"
+            ],
+            "css": [
+                "css/init.css",
+                "css/tool.menu.css",
+                "css/tool.s2t.css",
+                "css/tool.bib2bbl.css",
+                "css/tool.TikZ-PGF.css",
+                "css/tool.colorlib.css"
+            ]
+        }
+    ]
+}

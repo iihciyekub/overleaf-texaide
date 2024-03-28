@@ -1,0 +1,687 @@
+var colorlib_div = window.meun['colorlib'];
+
+
+var basecolor = {
+    'black': '#000000',
+    'blue': '#0000FF',
+    'brown': '#BF8040',
+    'cyan': '#00A1E9',
+    'darkgray': '#404040',
+    'gray': '#808080',
+    'green': '#00FF00',
+    'lightgray': '#BFBFBF',
+    'lime': '#BFFF00',
+    'magenta': '#E4007F',
+    'olive': '#A19600',
+    'orange': '#FF8000',
+    'pink': '#FFBFBF',
+    'purple': '#BF0040',
+    'red': '#FF0000',
+    'teal': '#008080',
+    'violet': '#800080',
+    'white': '#FFFFFF',
+    'yellow': '#FFF100'
+}
+var t1 = ""
+for (var key in basecolor) {
+    var color = basecolor[key];
+    t1 += `<button class="btn btn-primary color" style="background-color:${color};" title="${key}"></button>`
+}
+
+
+
+var dvipsnames = {
+    'Apricot': '#F8BF80',
+    'Aquamarine': '#00ADBA',
+    'Bittersweet': '#C55000',
+    'Black': '#000000',
+    'Blue': '#1E2188',
+    'BlueGreen': '#00A9B5',
+    'BlueViolet': '#402D8B',
+    'BrickRed': '#BC2B0D',
+    'Brown': '#7F2300',
+    'BurntOrange': '#F39600',
+    'CadetBlue': '#747097',
+    'CarnationPink': '#ED7FAF',
+    'Cerulean': '#009ADF',
+    'CornflowerBlue': '#44AEE4',
+    'Cyan': '#00A1E9',
+    'Dandelion': '#FAC12E',
+    'DarkOrchid': '#A74D85',
+    'Emerald': '#009E96',
+    'ForestGreen': '#00944E',
+    'Fuchsia': '#902686',
+    'Goldenrod': '#FFE329',
+    'Gray': '#9FA0A0',
+    'Green': '#009944',
+    'GreenYellow': '#E5E868',
+    'JungleGreen': '#009F93',
+    'Lavender': '#F2A3C5',
+    'LimeGreen': '#90C31F',
+    'Magenta': '#E4007F',
+    'Mahogany': '#AF3216',
+    'Maroon': '#B32E2F',
+    'Melon': '#F3A379',
+    'MidnightBlue': '#00699B',
+    'Mulberry': '#AE2B8A',
+    'NavyBlue': '#0465B3',
+    'OliveGreen': '#3E8326',
+    'Orange': '#F08227',
+    'OrangeRed': '#E50050',
+    'Orchid': '#B570AB',
+    'Peach': '#F39950',
+    'Periwinkle': '#7F76B5',
+    'PineGreen': '#008871',
+    'Plum': '#920883',
+    'ProcessBlue': '#00A4EA',
+    'Purple': '#9B3B92',
+    'RawSienna': '#9E4200',
+    'Red': '#E60013',
+    'RedOrange': '#EB5C27',
+    'RedViolet': '#A81D6B',
+    'Rhodamine': '#E84A95',
+    'RoyalBlue': '#0068B7',
+    'RoyalPurple': '#5E308F',
+    'RubineRed': '#E40075',
+    'Salmon': '#F19487',
+    'SeaGreen': '#2DB697',
+    'Sepia': '#6A1300',
+    'SkyBlue': '#51C1DD',
+    'SpringGreen': '#CCDD57',
+    'Tan': '#DDA371',
+    'TealBlue': '#00A6B1',
+    'Thistle': '#DB83B4',
+    'Turquoise': '#00AACB',
+    'Violet': '#533490',
+    'VioletRed': '#E94D96',
+    'White': '#FFFFFF',
+    'WildStrawberry': '#E6135F',
+    'Yellow': '#FFF100',
+    'YellowGreen': '#9ECC62',
+    'YellowOrange': '#F6A700'
+}
+var t2 = ""
+for (var key in dvipsnames) {
+    var color = dvipsnames[key];
+    t2 += `<button class="btn btn-primary color" style="background-color:${color};" title="${key}"></button>`
+}
+
+
+
+
+var svgnames = {
+    'AliceBlue': '#F0F8FF',
+    'AntiqueWhite': '#FAEBD7',
+    'Aqua': '#00FFFF',
+    'Aquamarine': '#7FFFD4',
+    'Azure': '#F0FFFF',
+    'Beige': '#F5F5DC',
+    'Bisque': '#FFE4C4',
+    'Black': '#000000',
+    'BlanchedAlmond': '#FFEBCD',
+    'Blue': '#0000FF',
+    'BlueViolet': '#892BE3',
+    'Brown': '#A52A2A',
+    'BurlyWood': '#DEB887',
+    'CadetBlue': '#5F9EA0',
+    'Chartreuse': '#7FFF00',
+    'Chocolate': '#D2691E',
+    'Coral': '#FF7F50',
+    'CornflowerBlue': '#6495ED',
+    'Cornsilk': '#FFF8DC',
+    'Crimson': '#DC143C',
+    'Cyan': '#00FFFF',
+    'DarkBlue': '#00008B',
+    'DarkCyan': '#008B8B',
+    'DarkGoldenrod': '#B8860B',
+    'DarkGray': '#A9A9A9',
+    'DarkGreen': '#006400',
+    'DarkGrey': '#A9A9A9',
+    'DarkKhaki': '#BDB76B',
+    'DarkMagenta': '#8B008B',
+    'DarkOliveGreen': '#556B2F',
+    'DarkOrange': '#FF8C00',
+    'DarkOrchid': '#9932CC',
+    'DarkRed': '#8B0000',
+    'DarkSalmon': '#E9967A',
+    'DarkSeaGreen': '#8FBC8F',
+    'DarkSlateBlue': '#483D8B',
+    'DarkSlateGray': '#2F4F4F',
+    'DarkSlateGrey': '#2F4F4F',
+    'DarkTurquoise': '#00CED1',
+    'DarkViolet': '#9400D3',
+    'DeepPink': '#FF1493',
+    'DeepSkyBlue': '#00BFFF',
+    'DimGray': '#696969',
+    'DimGrey': '#696969',
+    'DodgerBlue': '#1E90FF',
+    'FireBrick': '#B22222',
+    'FloralWhite': '#FFFAF0',
+    'ForestGreen': '#228B22',
+    'Fuchsia': '#FF00FF',
+    'Gainsboro': '#DCDCDC',
+    'GhostWhite': '#F8F8FF',
+    'Gold': '#FFD700',
+    'Goldenrod': '#DAA520',
+    'Gray': '#808080',
+    'Green': '#008000',
+    'GreenYellow': '#ADFF2F',
+    'Grey': '#808080',
+    'Honeydew': '#F0FFF0',
+    'HotPink': '#FF69B4',
+    'IndianRed': '#CD5C5C',
+    'Indigo': '#4B0082',
+    'Ivory': '#FFFFF0',
+    'Khaki': '#F0E68C',
+    'Lavender': '#E6E6FA',
+    'LavenderBlush': '#FFF0F5',
+    'LawnGreen': '#7CFD00',
+    'LemonChiffon': '#FFFACD',
+    'LightBlue': '#ADD8E6',
+    'LightCoral': '#F08080',
+    'LightCyan': '#E1FFFF',
+    'LightGoldenrod': '#EEDD82',
+    'LightGoldenrodYellow': '#FAFAD2',
+    'LightGray': '#D3D3D3',
+    'LightGreen': '#90EE90',
+    'LightGrey': '#D3D3D3',
+    'LightPink': '#FFB6C1',
+    'LightSalmon': '#FFA07A',
+    'LightSeaGreen': '#20B2AA',
+    'LightSkyBlue': '#87CEFA',
+    'LightSlateBlue': '#8470FF',
+    'LightSlateGray': '#778799',
+    'LightSlateGrey': '#778799',
+    'LightSteelBlue': '#B0C4DE',
+    'LightYellow': '#FFFFE1',
+    'Lime': '#00FF00',
+    'LimeGreen': '#32CD32',
+    'Linen': '#FAF0E6',
+    'Magenta': '#FF00FF',
+    'Maroon': '#800000',
+    'MediumAquamarine': '#66CDAA',
+    'MediumBlue': '#0000CD',
+    'MediumOrchid': '#BA55D3',
+    'MediumPurple': '#9370DB',
+    'MediumSeaGreen': '#3CB271',
+    'MediumSlateBlue': '#7B68EE',
+    'MediumSpringGreen': '#00FA9A',
+    'MediumTurquoise': '#48D1CC',
+    'MediumVioletRed': '#C71584',
+    'MidnightBlue': '#191970',
+    'MintCream': '#F5FFFA',
+    'MistyRose': '#FFE4E2',
+    'Moccasin': '#FFE4B5',
+    'NavajoWhite': '#FFDEAD',
+    'Navy': '#000080',
+    'NavyBlue': '#000080',
+    'OldLace': '#FDF5E6',
+    'Olive': '#808000',
+    'OliveDrab': '#6B8E23',
+    'Orange': '#FFA500',
+    'OrangeRed': '#FF4500',
+    'Orchid': '#DA70D6',
+    'PaleGoldenrod': '#EEE8AA',
+    'PaleGreen': '#98FB98',
+    'PaleTurquoise': '#AFEEEE',
+    'PaleVioletRed': '#DB7093',
+    'PapayaWhip': '#FFEFD5',
+    'PeachPuff': '#FFDAB9',
+    'Peru': '#CD843F',
+    'Pink': '#FFC0CB',
+    'Plum': '#DDA0DD',
+    'PowderBlue': '#B0E1E6',
+    'Purple': '#800080',
+    'Red': '#FF0000',
+    'RosyBrown': '#BC8F8F',
+    'RoyalBlue': '#4169E2',
+    'SaddleBrown': '#8B4513',
+    'Salmon': '#FA8072',
+    'SandyBrown': '#F4A460',
+    'SeaGreen': '#2E8B57',
+    'Seashell': '#FFF5EE',
+    'Sienna': '#A0522D',
+    'Silver': '#C0C0C0',
+    'SkyBlue': '#87CEEB',
+    'SlateBlue': '#6A5ACD',
+    'SlateGray': '#708090',
+    'SlateGrey': '#708090',
+    'Snow': '#FFFAFA',
+    'SpringGreen': '#00FF7F',
+    'SteelBlue': '#4682B4',
+    'Tan': '#D2B48C',
+    'Teal': '#008080',
+    'Thistle': '#D8BFD8',
+    'Tomato': '#FF6347',
+    'Turquoise': '#40E1D0',
+    'Violet': '#EE82EE',
+    'VioletRed': '#D02090',
+    'Wheat': '#F5DEB2',
+    'White': '#FFFFFF',
+    'WhiteSmoke': '#F5F5F5',
+    'Yellow': '#FFFF00',
+    'YellowGreen': '#9ACD32'
+}
+
+var t3 = ""
+for (var key in svgnames) {
+    var color = svgnames[key];
+    t3 += `<button class="btn btn-primary color" style="background-color:${color};" title="${key}"></button>`
+}
+
+
+
+
+var x11names = {
+    'AntiqueWhite1': '#FFEFDB',
+    'AntiqueWhite2': '#EEDFCC',
+    'AntiqueWhite3': '#CDC0B0',
+    'AntiqueWhite4': '#8B8278',
+    'Aquamarine1': '#7FFFD4',
+    'Aquamarine2': '#76EEC6',
+    'Aquamarine3': '#66CDAA',
+    'Aquamarine4': '#458B74',
+    'Azure1': '#F0FFFF',
+    'Azure2': '#E1EEEE',
+    'Azure3': '#C1CDCD',
+    'Azure4': '#828B8B',
+    'Bisque1': '#FFE4C4',
+    'Bisque2': '#EED5B7',
+    'Bisque3': '#CDB79E',
+    'Bisque4': '#8B7D6B',
+    'Blue1': '#0000FF',
+    'Blue2': '#0000EE',
+    'Blue3': '#0000CD',
+    'Blue4': '#00008B',
+    'Brown1': '#FF4040',
+    'Brown2': '#EE3B3B',
+    'Brown3': '#CD3333',
+    'Brown4': '#8B2323',
+    'Burlywood1': '#FFD39B',
+    'Burlywood2': '#EEC591',
+    'Burlywood3': '#CDAA7D',
+    'Burlywood4': '#8B7355',
+    'CadetBlue1': '#98F5FF',
+    'CadetBlue2': '#8EE5EE',
+    'CadetBlue3': '#7AC5CD',
+    'CadetBlue4': '#53868B',
+    'Chartreuse1': '#7FFF00',
+    'Chartreuse2': '#76EE00',
+    'Chartreuse3': '#66CD00',
+    'Chartreuse4': '#458B00',
+    'Chocolate1': '#FF7F24',
+    'Chocolate2': '#EE7621',
+    'Chocolate3': '#CD661D',
+    'Chocolate4': '#8B4513',
+    'Coral1': '#FF7256',
+    'Coral2': '#EE6A50',
+    'Coral3': '#CD5B45',
+    'Coral4': '#8B3E2F',
+    'Cornsilk1': '#FFF8DC',
+    'Cornsilk2': '#EEE8CD',
+    'Cornsilk3': '#CDC8B1',
+    'Cornsilk4': '#8B8778',
+    'Cyan1': '#00FFFF',
+    'Cyan2': '#00EEEE',
+    'Cyan3': '#00CDCD',
+    'Cyan4': '#008B8B',
+    'DarkGoldenrod1': '#FFB90F',
+    'DarkGoldenrod2': '#EEAD0E',
+    'DarkGoldenrod3': '#CD950C',
+    'DarkGoldenrod4': '#8B6508',
+    'DarkOliveGreen1': '#CAFF70',
+    'DarkOliveGreen2': '#BCEE68',
+    'DarkOliveGreen3': '#A2CD5A',
+    'DarkOliveGreen4': '#6E8B3D',
+    'DarkOrange1': '#FF7F00',
+    'DarkOrange2': '#EE7600',
+    'DarkOrange3': '#CD6600',
+    'DarkOrange4': '#8B4500',
+    'DarkOrchid1': '#BF3EFF',
+    'DarkOrchid2': '#B23AEE',
+    'DarkOrchid3': '#9A32CD',
+    'DarkOrchid4': '#68228B',
+    'DarkSeaGreen1': '#C1FFC1',
+    'DarkSeaGreen2': '#B4EEB4',
+    'DarkSeaGreen3': '#9BCD9B',
+    'DarkSeaGreen4': '#698B69',
+    'DarkSlateGray1': '#97FFFF',
+    'DarkSlateGray2': '#8DEEEE',
+    'DarkSlateGray3': '#79CDCD',
+    'DarkSlateGray4': '#528B8B',
+    'DeepPink1': '#FF1493',
+    'DeepPink2': '#EE1288',
+    'DeepPink3': '#CD1076',
+    'DeepPink4': '#8B0A50',
+    'DeepSkyBlue1': '#00BFFF',
+    'DeepSkyBlue2': '#00B2EE',
+    'DeepSkyBlue3': '#009ACD',
+    'DeepSkyBlue4': '#00688B',
+    'DodgerBlue1': '#1E90FF',
+    'DodgerBlue2': '#1C86EE',
+    'DodgerBlue3': '#1874CD',
+    'DodgerBlue4': '#104E8B',
+    'Firebrick1': '#FF3030',
+    'Firebrick2': '#EE2C2C',
+    'Firebrick3': '#CD2626',
+    'Firebrick4': '#8B1A1A',
+    'Gold1': '#FFD700',
+    'Gold2': '#EEC900',
+    'Gold3': '#CDAD00',
+    'Gold4': '#8B7500',
+    'Goldenrod1': '#FFC125',
+    'Goldenrod2': '#EEB422',
+    'Goldenrod3': '#CD9B1D',
+    'Goldenrod4': '#8B6914',
+    'Green1': '#00FF00',
+    'Green2': '#00EE00',
+    'Green3': '#00CD00',
+    'Green4': '#008B00',
+    'Honeydew1': '#F0FFF0',
+    'Honeydew2': '#E1EEE1',
+    'Honeydew3': '#C1CDC1',
+    'Honeydew4': '#828B82',
+    'HotPink1': '#FF6EB4',
+    'HotPink2': '#EE6AA7',
+    'HotPink3': '#CD6090',
+    'HotPink4': '#8B3A62',
+    'IndianRed1': '#FF6A6A',
+    'IndianRed2': '#EE6363',
+    'IndianRed3': '#CD5555',
+    'IndianRed4': '#8B3A3A',
+    'Ivory1': '#FFFFF0',
+    'Ivory2': '#EEEEE1',
+    'Ivory3': '#CDCDC1',
+    'Ivory4': '#8B8B82',
+    'Khaki1': '#FFF68F',
+    'Khaki2': '#EEE684',
+    'Khaki3': '#CDC673',
+    'Khaki4': '#8B864E',
+    'LavenderBlush1': '#FFF0F5',
+    'LavenderBlush2': '#EEE1E5',
+    'LavenderBlush3': '#CDC1C5',
+    'LavenderBlush4': '#8B8286',
+    'LemonChiffon1': '#FFFACD',
+    'LemonChiffon2': '#EEE9BF',
+    'LemonChiffon3': '#CDC9A5',
+    'LemonChiffon4': '#8B8870',
+    'LightBlue1': '#BFEFFF',
+    'LightBlue2': '#B2DFEE',
+    'LightBlue3': '#9AC0CD',
+    'LightBlue4': '#68828B',
+    'LightCyan1': '#E1FFFF',
+    'LightCyan2': '#D1EEEE',
+    'LightCyan3': '#B4CDCD',
+    'LightCyan4': '#7A8B8B',
+    'LightGoldenrod1': '#FFEC8B',
+    'LightGoldenrod2': '#EEDC82',
+    'LightGoldenrod3': '#CDBE70',
+    'LightGoldenrod4': '#8B814C',
+    'LightPink1': '#FFAEB9',
+    'LightPink2': '#EEA2AD',
+    'LightPink3': '#CD8C95',
+    'LightPink4': '#8B5F65',
+    'LightSalmon1': '#FFA07A',
+    'LightSalmon2': '#EE9572',
+    'LightSalmon3': '#CD8162',
+    'LightSalmon4': '#8B5742',
+    'LightSkyBlue1': '#B0E3FF',
+    'LightSkyBlue2': '#A4D3EE',
+    'LightSkyBlue3': '#8DB6CD',
+    'LightSkyBlue4': '#607B8B',
+    'LightSteelBlue1': '#CAE2FF',
+    'LightSteelBlue2': '#BCD2EE',
+    'LightSteelBlue3': '#A2B5CD',
+    'LightSteelBlue4': '#6E7B8B',
+    'LightYellow1': '#FFFFE1',
+    'LightYellow2': '#EEEED1',
+    'LightYellow3': '#CDCDB4',
+    'LightYellow4': '#8B8B7A',
+    'Magenta1': '#FF00FF',
+    'Magenta2': '#EE00EE',
+    'Magenta3': '#CD00CD',
+    'Magenta4': '#8B008B',
+    'Maroon1': '#FF34B2',
+    'Maroon2': '#EE30A7',
+    'Maroon3': '#CD2990',
+    'Maroon4': '#8B1C62',
+    'MediumOrchid1': '#E166FF',
+    'MediumOrchid2': '#D15FEE',
+    'MediumOrchid3': '#B452CD',
+    'MediumOrchid4': '#7A378B',
+    'MediumPurple1': '#AB82FF',
+    'MediumPurple2': '#9F79EE',
+    'MediumPurple3': '#8868CD',
+    'MediumPurple4': '#5D478B',
+    'MistyRose1': '#FFE4E2',
+    'MistyRose2': '#EED5D2',
+    'MistyRose3': '#CDB7B5',
+    'MistyRose4': '#8B7D7B',
+    'NavajoWhite1': '#FFDEAD',
+    'NavajoWhite2': '#EECFA1',
+    'NavajoWhite3': '#CDB28B',
+    'NavajoWhite4': '#8B795E',
+    'OliveDrab1': '#C0FF3E',
+    'OliveDrab2': '#B2EE3A',
+    'OliveDrab3': '#9ACD32',
+    'OliveDrab4': '#698B22',
+    'Orange1': '#FFA500',
+    'Orange2': '#EE9A00',
+    'Orange3': '#CD8400',
+    'Orange4': '#8B5A00',
+    'OrangeRed1': '#FF4500',
+    'OrangeRed2': '#EE4000',
+    'OrangeRed3': '#CD3700',
+    'OrangeRed4': '#8B2500',
+    'Orchid1': '#FF82FA',
+    'Orchid2': '#EE7AE9',
+    'Orchid3': '#CD69C9',
+    'Orchid4': '#8B4788',
+    'PaleGreen1': '#9AFF9A',
+    'PaleGreen2': '#90EE90',
+    'PaleGreen3': '#7CCD7C',
+    'PaleGreen4': '#548B54',
+    'PaleTurquoise1': '#BBFFFF',
+    'PaleTurquoise2': '#AEEEEE',
+    'PaleTurquoise3': '#96CDCD',
+    'PaleTurquoise4': '#668B8B',
+    'PaleVioletRed1': '#FF82AB',
+    'PaleVioletRed2': '#EE799F',
+    'PaleVioletRed3': '#CD6888',
+    'PaleVioletRed4': '#8B475D',
+    'PeachPuff1': '#FFDAB9',
+    'PeachPuff2': '#EECBAD',
+    'PeachPuff3': '#CDAF95',
+    'PeachPuff4': '#8B7765',
+    'Pink1': '#FFB5C5',
+    'Pink2': '#EEA9B8',
+    'Pink3': '#CD919E',
+    'Pink4': '#8B636C',
+    'Plum1': '#FFBBFF',
+    'Plum2': '#EEAEEE',
+    'Plum3': '#CD96CD',
+    'Plum4': '#8B668B',
+    'Purple1': '#9B30FF',
+    'Purple2': '#912CEE',
+    'Purple3': '#7D26CD',
+    'Purple4': '#551A8B',
+    'Red1': '#FF0000',
+    'Red2': '#EE0000',
+    'Red3': '#CD0000',
+    'Red4': '#8B0000',
+    'RosyBrown1': '#FFC1C1',
+    'RosyBrown2': '#EEB4B4',
+    'RosyBrown3': '#CD9B9B',
+    'RosyBrown4': '#8B6969',
+    'RoyalBlue1': '#4876FF',
+    'RoyalBlue2': '#436EEE',
+    'RoyalBlue3': '#3A5FCD',
+    'RoyalBlue4': '#27408B',
+    'Salmon1': '#FF8C69',
+    'Salmon2': '#EE8262',
+    'Salmon3': '#CD7054',
+    'Salmon4': '#8B4C39',
+    'SeaGreen1': '#54FF9F',
+    'SeaGreen2': '#4EEE94',
+    'SeaGreen3': '#43CD80',
+    'SeaGreen4': '#2E8B57',
+    'Seashell1': '#FFF5EE',
+    'Seashell2': '#EEE5DE',
+    'Seashell3': '#CDC5BF',
+    'Seashell4': '#8B8682',
+    'Sienna1': '#FF8247',
+    'Sienna2': '#EE7942',
+    'Sienna3': '#CD6839',
+    'Sienna4': '#8B4726',
+    'SkyBlue1': '#87CEFF',
+    'SkyBlue2': '#7EC0EE',
+    'SkyBlue3': '#6CA6CD',
+    'SkyBlue4': '#4A708B',
+    'SlateBlue1': '#826FFF',
+    'SlateBlue2': '#7A67EE',
+    'SlateBlue3': '#6959CD',
+    'SlateBlue4': '#473C8B',
+    'SlateGray1': '#C6E3FF',
+    'SlateGray2': '#B9D3EE',
+    'SlateGray3': '#9FB6CD',
+    'SlateGray4': '#6C7B8B',
+    'Snow1': '#FFFAFA',
+    'Snow2': '#EEE9E9',
+    'Snow3': '#CDC9C9',
+    'Snow4': '#8B8888',
+    'SpringGreen1': '#00FF7F',
+    'SpringGreen2': '#00EE76',
+    'SpringGreen3': '#00CD66',
+    'SpringGreen4': '#008B45',
+    'SteelBlue1': '#63B8FF',
+    'SteelBlue2': '#5CACEE',
+    'SteelBlue3': '#4F94CD',
+    'SteelBlue4': '#36648B',
+    'Tan1': '#FFA54F',
+    'Tan2': '#EE9A49',
+    'Tan3': '#CD843F',
+    'Tan4': '#8B5A2B',
+    'Thistle1': '#FFE2FF',
+    'Thistle2': '#EED2EE',
+    'Thistle3': '#CDB5CD',
+    'Thistle4': '#8B7B8B',
+    'Tomato1': '#FF6347',
+    'Tomato2': '#EE5C42',
+    'Tomato3': '#CD4F39',
+    'Tomato4': '#8B3626',
+    'Turquoise1': '#00F5FF',
+    'Turquoise2': '#00E5EE',
+    'Turquoise3': '#00C5CD',
+    'Turquoise4': '#00868B',
+    'VioletRed1': '#FF3E96',
+    'VioletRed2': '#EE3A8C',
+    'VioletRed3': '#CD3278',
+    'VioletRed4': '#8B2252',
+    'Wheat1': '#FFE7BA',
+    'Wheat2': '#EED8AE',
+    'Wheat3': '#CDBA96',
+    'Wheat4': '#8B7E66',
+    'Yellow1': '#FFFF00',
+    'Yellow2': '#EEEE00',
+    'Yellow3': '#CDCD00',
+    'Yellow4': '#8B8B00',
+    'Gray0': '#BEBEBE',
+    'Green0': '#00FF00',
+    'Grey0': '#BEBEBE',
+    'Maroon0': '#B03060',
+    'Purple0': '#A020F0'
+}
+
+
+var t4 = ""
+for (var key in x11names) {
+    var color = x11names[key];
+    t4 += `<button class="btn btn-primary color" style="background-color:${color};" title="${key}"></button>`
+}
+
+
+
+
+
+
+
+
+
+
+
+
+colorlib_div.innerHTML = `
+<div class="modal-header tool color" title="Base colors">
+    <div class="modal-title tool">
+        <i class="fa fa-bars fa-fw" ></i> 
+    </div>
+    <div class="modal-title tool ">
+        Base colors <a>(点击色块获得名称)</a>
+    </div>
+</div>
+<div class="modal-body color" id="Base colors">
+    ${t1}
+</div>
+
+<div class="modal-header tool color" title="dvipsnames">
+    <div class="modal-title tool">
+        <i class="fa fa-bars fa-fw" ></i> 
+    </div>
+    <div class="modal-title tool ">
+        dvipsnames
+    </div>
+</div>
+<div class="modal-body color" style="display:block;" id="dvipsnames">
+    ${t2} 
+</div>
+
+<div class="modal-header tool color" title="svgnames">
+    <div class="modal-title tool">
+        <i class="fa fa-bars fa-fw" ></i> 
+    </div>
+    <div class="modal-title tool">
+    svgnames
+        </div>
+    </div>
+
+<div class="modal-body color" id="svgnames"> 
+    ${t3}
+</div>
+
+
+<div class="modal-header tool color" title="x11names">
+    <div class="modal-title tool">
+        <i class="fa fa-bars fa-fw" ></i> 
+    </div>
+    <div class="modal-title tool ">
+    x11names
+        </div>
+    </div>
+
+<div class="modal-body color" id="x11names">
+    ${t4}
+</div>
+</div>
+`
+
+var headertool = document.querySelectorAll('.modal-header.tool.color');
+// 对所有的 header tool 添加点击事件
+headertool.forEach(function (tool) {
+    tool.addEventListener('click', function () {
+        var s = document.getElementById(tool.title)
+        s.style.display = s.style.display == "none" ? "block" : "none";
+    });
+});
+
+
+
+//找到所有 color button
+var color_btns = document.querySelectorAll('button.btn.btn-primary.color');
+
+//给每个 button 添加点击事件
+color_btns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        //获取当前颜色
+        window.copyToClipboard(btn.title)
+    });
+});

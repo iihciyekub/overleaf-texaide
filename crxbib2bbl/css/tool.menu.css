@@ -1,0 +1,40 @@
+.ui-layout-east.ui-layout-pane.ui-layout-pane-east {
+    background-color: #f9f8f434;
+}
+
+div.modal-header.tool {
+    padding-bottom: 5px;
+    padding-top: 2px;
+    color: #242424e2;
+    background-color: #b4c6e300;
+    border-top: 1px solid #49536544;
+    border-bottom: 1px solid #49536544;
+    display: flex;
+    align-items: center;
+}
+
+div.modal-title.tool {
+    font-size: 1em;
+    width:auto;
+    align-content: center;
+    font-weight: bold;
+    align-items: center;
+    display: flex;
+
+}
+
+div.modal-title.tool i {
+    margin-right: 5px;
+    font-size: 1em;
+    align-content: center;
+    color: #242424e2;
+}
+
+div.modal-footer.tool {
+    background-color: #f9f8f434;
+}
+
+a {
+    color: #3265b2;
+    text-decoration: none;
+}

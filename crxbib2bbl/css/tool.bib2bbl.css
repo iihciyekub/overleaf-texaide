@@ -1,0 +1,40 @@
+#copyclear {
+    background-color: rgb(20, 20, 20);
+}
+
+#copycitekeys {
+    background-color: rgb(175, 61, 99);
+}
+
+#recitekeys {
+    background-color: rgb(61, 171, 175);
+
+}
+
+
+#bib-input {
+    min-height: 300px;
+    font-size: 13px;
+    width: 35%;
+    margin-right: 4px;
+    white-space: nowrap;
+    line-height: 1.2;
+}
+
+#bbl-output {
+    min-height: 300px;
+    font-size: 13px;
+    width: 65%;
+    margin-left: 4px;
+    white-space: nowrap;
+    line-height: 1.2;
+}
+
+
+
+#citekeys {
+    font-size: 13px;
+    width: 100%;
+    min-height: 60px;
+    margin-top: 5px;
+}

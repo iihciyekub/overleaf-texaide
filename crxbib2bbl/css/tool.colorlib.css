@@ -1,0 +1,16 @@
+.btn.btn-primary.color {
+    min-width: 20px;
+    min-height: 12px;
+    margin: 1px;
+    padding: 0pt;
+    border-radius: 2pt;
+    border: 0.1px solid rgba(0, 0, 0, 0.187);
+}
+
+.modal-body.color {
+    padding-top: 1pt;
+    padding-bottom: 1pt;
+    max-height: 600px;
+    overflow-y: auto;
+    display: none;
+}
