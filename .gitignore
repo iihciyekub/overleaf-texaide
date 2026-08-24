@@ -5,3 +5,5 @@ crxbib2bbl/*.zip
 bib2bbl.html
 node_modules/
 build/
+*.zip
+.DS_Store
