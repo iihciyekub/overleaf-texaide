@@ -40,7 +40,7 @@ test('side-panel Download PDFs action uses trusted CNKI page clicks in both dest
   assert.match(sidepanel, /Input\.dispatchMouseEvent/);
   assert.match(sidepanel, /type: 'mousePressed'/);
   assert.match(sidepanel, /type: 'mouseReleased'/);
-  assert.ok(manifest.permissions.includes('debugger'));
+  assert.ok(!manifest.permissions.includes('debugger'));
 });
 
 test('selected-folder mode intercepts the trusted click response and writes the validated PDF', () => {

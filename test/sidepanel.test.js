@@ -23,7 +23,7 @@ test('extension action opens the native Chrome side panel', () => {
   assert.equal(manifest.action.default_popup, undefined);
   assert.ok(manifest.permissions.includes('sidePanel'));
   assert.ok(manifest.permissions.includes('downloads'));
-  assert.ok(manifest.permissions.includes('debugger'));
+  assert.ok(!manifest.permissions.includes('debugger'));
   assert.deepEqual(manifest.host_permissions, ['http://*/*', 'https://*/*']);
   const generalScripts = manifest.content_scripts.filter(item => item.js.includes('contentScript.js'));
   assert.equal(generalScripts.length, 1);

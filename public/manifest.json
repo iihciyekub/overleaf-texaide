@@ -27,8 +27,7 @@
     "activeTab",
     "scripting",
     "sidePanel",
-    "downloads",
-    "debugger"
+    "downloads"
   ],
   "host_permissions": [
     "http://*/*",
