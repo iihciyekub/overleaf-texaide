@@ -1,0 +1,30 @@
+{
+  "name": "overleaf-texaide",
+  "version": "3.0.0",
+  "description": "Overleaf TeX tools and research workflow Side Panel extension",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "watch": "node ./node_modules/webpack/bin/webpack.js --mode=development --watch --config config/webpack.config.js",
+    "build": "node ./node_modules/webpack/bin/webpack.js --mode=production --config config/webpack.config.js && node scripts/verify-build-output.js && node scripts/verify-no-secrets.js",
+    "verify:no-secrets": "node scripts/verify-no-secrets.js"
+  },
+  "devDependencies": {
+    "copy-webpack-plugin": "^6.4.1",
+    "css-loader": "^6.11.0",
+    "file-loader": "^6.2.0",
+    "mini-css-extract-plugin": "^0.10.1",
+    "size-plugin": "^2.0.2",
+    "webpack": "^5.104.1",
+    "webpack-cli": "^4.10.0",
+    "webpack-merge": "^5.10.0"
+  },
+  "dependencies": {
+    "@citation-js/core": "0.7.21",
+    "@citation-js/plugin-csl": "0.7.22",
+    "citeproc-locales": "1.0.2",
+    "docx": "9.7.1",
+    "jquery": "^4.0.0",
+    "opencc-js": "^1.4.1"
+  }
+}

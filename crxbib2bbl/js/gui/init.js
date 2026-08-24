@@ -2,7 +2,7 @@ var init = document.createElement('div');
 init.id = 'init';
 init.innerHTML = `
 <div id = "texAide" style="display:flex">
-<div class="mustesc">Escape: 鼠标从两侧或这移出隐藏</div>
+<div class="mustesc">隐藏面板: 按 Esc /或/ 鼠标左右两侧移出 </div>
 <div class="mustinfo"> Ctrl+ Q: 呼出/隐藏;  | 双击绿 code 时将自动复制; </div>
 </div>`
 document.body.appendChild(init);
@@ -11,7 +11,7 @@ var tolgo = document.createElement('div');
 tolgo.id = 'tolgo';
 tolgo.className = "togshow";
 tolgo.innerHTML = `
-<i class="fa fa-bars fa-fw editor-menu-icon"></i>&nbsp<span class="latexapp" style="color:white;">texAide Ctrl + Q </span>
+<i class="fa fa-bars fa-fw editor-menu-icon"></i>&nbsp<span class="latexapp" style="color:white;">texAide (Ctrl + Q) </span>
 `
 document.body.appendChild(tolgo);
 
@@ -41,7 +41,10 @@ function tolgo_ani() {
     }
 }
 
-tolgo.addEventListener('mouseenter', function () {
+
+
+
+tolgo.addEventListener('click', function () {
     tolgo.className = "toghiden";
     init.className = "initshow";
     var input = document.getElementById('latex-macro-search');
@@ -52,6 +55,8 @@ tolgo.addEventListener('mouseenter', function () {
         };
     }
 });
+
+
 
 
 document.addEventListener('keydown', function (event) {
@@ -98,6 +103,9 @@ init.addEventListener('mouseleave', function (event) {
         }
     }
 });
+
+
+
 
 // init.addEventListener("mousedown", function (event) {
 //     isMouseDown = true;

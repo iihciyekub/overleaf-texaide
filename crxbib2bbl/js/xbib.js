@@ -868,9 +868,9 @@ class iname extends itex {
     }
 
     /**
-     * apa 格式要求下的,出现在段落中的作者引用,
+     * apa 格式要求下的,出现在段落中的作者引用,2024-04-21 停用
      */
-    get apa_citeauthor() {
+    get back_apa_citeauthor() {
         let apaField = `_author_apa7`
         if (this.hasOwnProperty(apaField)) { return this[apaField] };
         this.__to_dict();
@@ -904,6 +904,48 @@ class iname extends itex {
         }
         this[apaField] = t;
         return this[apaField]
+    };
+
+    /**
+     * apa 格式要求下的,出现在段落中的作者引用,2024-04-21 启用
+     */
+    get apa_citeauthor() {
+        let apaField = `_author_apa7`
+        if (this.hasOwnProperty(apaField)) { return this[apaField] };
+        this.__to_dict();
+        let t_dic = this[`_name_dict`];
+        // 判断t_dic 为空字典
+        if (Object.keys(t_dic).length == 0) { return "" };
+
+        let lan = this.language;
+        let num_name = this[`_name_num`]
+        let t = "";
+        if (lan == 'en') {
+            // 遍历 t_dic 字典
+            for (let key in t_dic) {
+                if (key == 0) {
+                } else if (num_name ==2) {
+                    t += ' \\& '
+                } else if (num_name !=2 & key == num_name - 1) {
+                    t += ', \\& '
+                } else {
+                    t += ", "
+                }
+                t += t_dic[key]['first'].map(s => s.charAt(0).toUpperCase() + s.slice(1)).join(" ");
+            }
+        } else if (lan == 'zh') {
+            for (let key in t_dic) {
+                if (key == 0) {
+                } else if (key == num_name - 1) {
+                    t += '與'
+                } else {
+                    t += "、"
+                }
+                t += t_dic[key]['first'].join("") + t_dic[key]['others'].join("");
+            }
+        }
+        this[apaField] = `{${t}}`;
+        return this[apaField]
     }
 }
 
@@ -918,36 +960,31 @@ class anybib {
 
         let entry = this.entryType;
         //如果 entry 不在 BIB.key中
-        if (!BIB.hasOwnProperty(entry)) {
-            return ""
-        }
+        if (BIB.hasOwnProperty(entry)) {
+            let fileds = BIB[entry]['N'] + BIB[entry]['UN'];
+            //遍历 BIB[entry]['N'] 所有的字段，并创建
+            BIB[entry]['N'].forEach(f => {
+                this[`org_${f}`] = '';
+            });
 
-
-        let fileds = BIB[entry]['N'] + BIB[entry]['UN'];
-
-        //遍历 BIB[entry]['N'] 所有的字段，并创建
-        BIB[entry]['N'].forEach(f => {
-            this[`org_${f}`] = '';
-        });
-
-        const key_value = [...txt.matchAll(/(\w+)\s*=\s*[{"'](.*)[}"']/g)].map(m => [m[1], m[2]]);
-        key_value.forEach(([field, value]) => {
-            field = field.toLowerCase().trim();
-            value = value.trim();
-            if (fileds.includes(field) && value != '') {
-                // 如果field 在 数组[note,authout]中则不需要处理
-                if (['note', 'url',].includes(field)) {
-                    value = new itex(value);
-                    value = value.url.str
-                    this[`org_${field}`] = value;
-                } else {
-                    value = new itex(value);
-                    value = value.clear.str;
-                    this[`org_${field}`] = value;
+            const key_value = [...txt.matchAll(/(\w+)\s*=\s*[{"'](.*)[}"']/g)].map(m => [m[1], m[2]]);
+            key_value.forEach(([field, value]) => {
+                field = field.toLowerCase().trim();
+                value = value.trim();
+                if (fileds.includes(field) && value != '') {
+                    // 如果field 在 数组[note,authout]中则不需要处理
+                    if (['note', 'url',].includes(field)) {
+                        value = new itex(value);
+                        value = value.url.str
+                        this[`org_${field}`] = value;
+                    } else {
+                        value = new itex(value);
+                        value = value.clear.str;
+                        this[`org_${field}`] = value;
+                    }
                 }
-            }
-        });
-
+            });
+        }
     }
 
     /**
@@ -1465,13 +1502,15 @@ class anybib {
         if (language == 'zh') {
             switch (entryType) {
                 default:
-                    value = value.italic.bold.macro
+                    // value = value.italic.bold.macro 20240421停用
+                    value = value.macro
                     break;
             }
         } else if (language == 'en') {
             switch (entryType) {
                 default:
-                    value = value.italic.macro
+                    // value = value.italic.macro
+                    value = value.macro
                     break;
             }
         }
@@ -2161,7 +2200,7 @@ class anybib {
             case 'patent':// patent: 专利
                 return this.misc;
             default:
-                return this.misc;
+                return "";
         }
     }
 }
@@ -2169,7 +2208,6 @@ class anybib {
 class read_bib {
     constructor(bibtxt) {
         // console.log(cn2hk('汉语，门槛'))
-
         bibtxt = cn2hk(bibtxt);
         this.bibtxt = bibtxt;
         this.citekey_list = [];
@@ -2195,7 +2233,6 @@ class read_bib {
     }
 
     get citekeys() {
-
         return this.citekey_list.join(", ")
     }
 
@@ -2230,6 +2267,10 @@ class read_bib {
             // var tembib = res[i].split('\n').filter(line => line.trim() !== '' && !line.trim().startsWith('%')).join('\n');
             var tembib = res[i];
             var t = new anybib(tembib);
+            if (!BIB.hasOwnProperty(t.entryType)) {
+                console.log(`${t.entryType}, 类型bibitem 不支持, 解析错误..`)
+                continue;
+            }
 
             //  通过 citetxt 加 title的方式 判断此 bib 已存入
             let citetxt = t.apa_citetxt;
@@ -2425,7 +2466,7 @@ class read_bib {
         if (this.numofzhbib == 0) {
             a = ""
         } else {
-            a = `\\bibitem[En, 2019]{en2019}{\\fontsize{16 pt}{\\baselineskip}\\selectfont 英文部分：}`
+            a = `\n\n\\vspace{0.5cm}\\bibitem[En, 2019]{en2019}{\\fontsize{16 pt}{\\baselineskip}\\selectfont 英文部分：}`
         }
         a += `\n{\\enfz \n`
 

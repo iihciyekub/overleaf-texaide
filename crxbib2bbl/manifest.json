@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
-    "version": "2.68.29",
+    "version": "2.98.10",
     "name": "overleaf texAide",
-    "description": "提供 N 多宏命令辅助 texing;",
+    "description": "提供 N 多宏命令辅助 happy texing;",
     "icons": {
         "16": "icons/icon16.png",
         "48": "icons/icon48.png",
@@ -11,7 +11,9 @@
     "content_scripts": [
         {
             "matches": [
-                "https://www.overleaf.com/project/*"
+                "https://*.overleaf.com/project/*",
+                "https://www.overleaf.com/project/*",
+                "https://cn.overleaf.com/project/*"
             ],
             "js": [
                 "js/public.js",

@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Overleaf texAide</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+  <link rel="stylesheet" href="all.min.css" />
+</head>
+<body data-surface="sidepanel">
+  <main class="sidepanel-app">
+    <nav class="tab-bar" role="tablist" aria-label="texAide tools">
+      <button class="tab-button" id="tabLlm" data-panel="llmPanel" role="tab" aria-selected="false" aria-controls="llmPanel" title="LLM Tools" data-i18n-title="nav.llm.title" hidden>
+        <i class="fa-solid fa-brain" aria-hidden="true"></i>
+        <span data-i18n="nav.llm">LLM</span>
+      </button>
+      <button class="tab-button" id="tabCrossref" data-panel="crossrefPanel" role="tab" aria-selected="false" aria-controls="crossrefPanel" title="Crossref Literature Search" data-i18n-title="nav.crossref.title">
+        <i class="fa-solid fa-book-open" aria-hidden="true"></i>
+        <span data-i18n="nav.crossref">Crossref</span>
+      </button>
+      <button class="tab-button" id="tabTexS2t" data-panel="texS2tPanel" role="tab" aria-selected="false" aria-controls="texS2tPanel" title="简繁转换">
+        <i class="fa-solid fa-language" aria-hidden="true"></i>
+        <span>简繁转换</span>
+      </button>
+      <button class="tab-button" id="tabTexBib" data-panel="texBibPanel" role="tab" aria-selected="false" aria-controls="texBibPanel" title="BibTeX → BBL">
+        <i class="fa-solid fa-book" aria-hidden="true"></i>
+        <span>BibTeX → BBL</span>
+      </button>
+      <button class="tab-button" id="tabTexTikz" data-panel="texTikzPanel" role="tab" aria-selected="false" aria-controls="texTikzPanel" title="TikZ / PGF">
+        <i class="fa-solid fa-code" aria-hidden="true"></i>
+        <span>TikZ / PGF</span>
+      </button>
+      <button class="tab-button" id="tabTexColor" data-panel="texColorPanel" role="tab" aria-selected="false" aria-controls="texColorPanel" title="LaTeX Colors">
+        <i class="fa-solid fa-palette" aria-hidden="true"></i>
+        <span>LaTeX Colors</span>
+      </button>
+      <button class="tab-button" id="tabSettings" data-panel="settingsPanel" role="tab" aria-selected="false" aria-controls="settingsPanel" title="Settings" data-i18n-title="nav.settings.title">
+        <i class="fa-solid fa-gear" aria-hidden="true"></i>
+        <span data-i18n="nav.settings">Settings</span>
+      </button>
+    </nav>
+
+    <div class="tab-content">
+      <section class="tab-panel" id="llmPanel" role="tabpanel" aria-labelledby="tabLlm" hidden>
+        <div class="tool-switch llm-sub-tabs" role="tablist" aria-label="LLM tools">
+          <button id="llmChatSubTab" class="tool-switch-button is-active" type="button" role="tab" aria-selected="true" aria-controls="llmChatSubPanel">
+            <i class="fa-solid fa-comments" aria-hidden="true"></i>
+            <span data-i18n="llm.chat">查询</span>
+          </button>
+          <button id="llmSettingsSubTab" class="tool-switch-button" type="button" role="tab" aria-selected="false" aria-controls="llmSettingsSubPanel">
+            <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+            <span data-i18n="llm.settings">LLM 配置</span>
+          </button>
+          <button id="llmHistorySubTab" class="tool-switch-button" type="button" role="tab" aria-selected="false" aria-controls="llmHistorySubPanel">
+            <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+            <span data-i18n="llm.history">历史</span>
+          </button>
+        </div>
+
+        <div id="llmChatSubPanel" class="llm-sub-panel" role="tabpanel" aria-labelledby="llmChatSubTab">
+          <section class="flat-card llm-chat-card">
+            <div id="llmChatMessages" class="llm-chat-messages" aria-live="polite" hidden></div>
+            <div class="llm-composer">
+              <textarea id="llmChatInput" class="llm-composer-input" rows="3" placeholder="Example: Studies of platform governance and seller innovation since 2020" data-i18n-placeholder="llm.inputPlaceholder"></textarea>
+              <div class="llm-composer-bar">
+                <button id="clearLlmChatBtn" class="icon-button" type="button" title="New conversation" aria-label="New conversation" data-i18n-title="llm.new" data-i18n-aria-label="llm.new">
+                  <i class="fa-solid fa-comments" aria-hidden="true"></i>
+                </button>
+                <div id="llmChatStatus" class="llm-chat-status-inline" role="status" hidden></div>
+                <div class="llm-composer-spacer"></div>
+                <div class="llm-context-model-controls">
+                  <div class="llm-context-meter">
+                    <button id="llmContextMeterBtn" class="llm-context-meter-button" type="button" title="Conversation context" aria-label="Conversation context" aria-expanded="false" data-i18n-title="llm.contextUsage" data-i18n-aria-label="llm.contextUsage">
+                      <span id="llmContextRing" class="llm-context-ring" aria-hidden="true"></span>
+                      <span id="llmContextMeterLabel" class="llm-context-meter-label">0/8K</span>
+                    </button>
+                    <div id="llmContextPopover" class="llm-context-popover" hidden>
+                      <strong data-i18n="llm.contextUsage">Conversation context</strong>
+                      <span id="llmContextPopoverUsage">0 / 8K</span>
+                      <small id="llmContextPopoverHint"></small>
+                      <div id="llmContextPopoverProgress" class="llm-context-popover-progress" role="status" aria-live="polite" hidden>
+                        <i id="llmContextPopoverProgressIcon" class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i>
+                        <span id="llmContextPopoverProgressText"></span>
+                        <time id="llmContextPopoverProgressElapsed"></time>
+                      </div>
+                      <button id="llmCompactContextBtn" class="button button--ghost" type="button" data-i18n="llm.compactNow">Compact now</button>
+                    </div>
+                    <span id="llmContextPopoverArrow" class="llm-context-popover-arrow" aria-hidden="true"></span>
+                  </div>
+                  <div class="llm-model-picker">
+                    <button id="llmSelectedModelLabel" class="llm-selected-model-label" type="button" title="No model selected" data-i18n-title="llm.noModel" data-i18n="llm.noModel">No model selected</button>
+                    <button id="llmModelPickerBtn" class="llm-model-picker-button" type="button" title="Select model" aria-label="Select model" aria-expanded="false" data-i18n-title="llm.modelPicker" data-i18n-aria-label="llm.modelPicker">
+                      <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                    </button>
+                    <div id="llmModelMenu" class="llm-model-menu" role="menu" hidden></div>
+                  </div>
+                </div>
+                <button id="sendLlmChatBtn" class="llm-composer-send" type="button" title="Generate &amp; Run" aria-label="Generate and run" data-i18n-title="llm.send" data-i18n-aria-label="llm.send">
+                  <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <dialog id="llmContextDialog" class="llm-context-dialog" aria-labelledby="llmContextDialogTitle">
+          <form method="dialog">
+            <div class="llm-context-dialog__heading">
+              <i class="fa-solid fa-gauge-high" aria-hidden="true"></i>
+              <strong id="llmContextDialogTitle" data-i18n="llm.contextLimitTitle">Conversation context is nearly full</strong>
+            </div>
+            <p id="llmContextDialogMessage"></p>
+            <div class="llm-context-dialog__actions">
+              <button class="button" type="submit" value="compact" data-i18n="llm.compactAndContinue">Compact and continue</button>
+              <button class="button button--ghost" type="submit" value="new" data-i18n="llm.newAndContinue">New conversation</button>
+              <button class="button button--ghost" type="submit" value="cancel" data-i18n="llm.cancel">Cancel</button>
+            </div>
+          </form>
+        </dialog>
+
+        <div id="llmHistorySubPanel" class="llm-sub-panel" role="tabpanel" aria-labelledby="llmHistorySubTab" hidden>
+          <section class="flat-card llm-history-card">
+            <div class="llm-history-heading">
+              <strong data-i18n="llm.historyTitle">Conversation history</strong>
+            </div>
+            <div id="llmHistoryEmpty" class="llm-history-empty" data-i18n="llm.historyEmpty">No saved conversations.</div>
+            <div id="llmHistoryList" class="llm-history-list"></div>
+          </section>
+        </div>
+
+        <div id="llmSettingsSubPanel" class="llm-sub-panel" role="tabpanel" aria-labelledby="llmSettingsSubTab" hidden>
+          <div class="panel panel--collapsible" id="openaiSettingsPanel">
+            <button class="panel-header" id="aiProviderSettingsToggle" aria-expanded="true">
+              <span class="panel-title" data-i18n="llm.providerSettings">LLM Provider Settings</span>
+              <i class="fa-solid fa-chevron-up" aria-hidden="true"></i>
+            </button>
+            <div class="panel-body" id="aiProviderSettingsBody">
+              <div class="panel-section">
+                <div class="panel-subtitle" data-i18n="llm.provider">WOS Query Provider</div>
+                <div class="field-row ai-provider-select-row">
+                  <select id="aiProviderSelect">
+                    <option value="openai">OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="gemini">Google Gemini</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="deepseek">DeepSeek</option>
+                    <option value="siliconflow">SiliconFlow</option>
+                    <option value="groq">Groq</option>
+                    <option value="mistral">Mistral</option>
+                    <option value="azureOpenAI">Azure OpenAI</option>
+                    <option value="ollama">Ollama</option>
+                    <option value="lmstudio">LM Studio</option>
+                    <option value="compatible">OpenAI Compatible</option>
+                  </select>
+                  <a id="aiProviderOfficialLink" class="icon-button ai-provider-official-link" href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" title="Open provider official page" aria-label="Open provider official page" data-i18n-title="llm.providerOfficialLink" data-i18n-aria-label="llm.providerOfficialLink"><i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
+                </div>
+                <div id="aiProviderHint" class="helper" data-i18n="llm.providerHint">The WOS Query Assistant uses the selected provider.</div>
+                <div id="aiProviderPricing" class="helper ai-provider-pricing" hidden>
+                  <span data-i18n="llm.openaiPricingText">OpenAI model pricing:</span>
+                  <a href="https://developers.openai.com/api/docs/pricing" target="_blank" rel="noopener noreferrer" data-i18n="llm.openaiPricingLink">View pricing</a>
+                </div>
+              </div>
+              <div class="panel-section">
+                <div class="panel-subtitle" data-i18n="llm.providerConfig">Provider Configuration</div>
+                <div class="field-row" id="aiProviderBaseUrlRow">
+                  <input id="aiProviderBaseUrlInput" type="text" placeholder="https://api.example.com/v1" autocomplete="off" data-i18n-placeholder="llm.baseUrlPlaceholder" />
+                </div>
+                <div class="field-row" id="aiProviderApiVersionRow" style="display:none;">
+                  <input id="aiProviderApiVersionInput" type="text" placeholder="api-version" autocomplete="off" data-i18n-placeholder="llm.apiVersionPlaceholder" />
+                </div>
+                <div class="field-row" id="aiProviderApiKeyRow">
+                  <input id="aiProviderApiKeyInput" type="password" placeholder="API key" autocomplete="off" data-i18n-placeholder="llm.apiKeyPlaceholder" />
+                  <button id="aiProviderApiKeyToggle" class="icon-button" title="Show/Hide API Key"><i class="fa-solid fa-eye" aria-hidden="true"></i></button>
+                </div>
+                <label class="field-stack ai-provider-mode-field" id="aiProviderTransportRow">
+                  <span data-i18n="llm.transportMode">API mode</span>
+                  <select id="aiProviderTransportSelect" aria-label="API mode" data-i18n-aria-label="llm.transportMode"></select>
+                </label>
+                <div class="field-row ai-provider-model-select-row" id="aiProviderModelSelectRow" style="display:none;">
+                  <select id="aiProviderModelSelect"><option value="" data-i18n="llm.modelSelectPlaceholder">Select a model</option></select>
+                  <button id="aiProviderRemoveModelBtn" class="icon-button" type="button" title="Remove selected model" aria-label="Remove selected model" data-i18n-title="llm.removeModel" data-i18n-aria-label="llm.removeModel"><i class="fa-solid fa-trash-can" aria-hidden="true"></i></button>
+                  <button id="aiProviderClearModelsBtn" class="icon-button" type="button" title="Clear all models" aria-label="Clear all models" data-i18n-title="llm.clearModels" data-i18n-aria-label="llm.clearModels"><i class="fa-solid fa-broom" aria-hidden="true"></i></button>
+                </div>
+                <div class="ai-provider-model-search">
+                  <div class="ai-provider-model-search-heading">
+                    <strong data-i18n="llm.modelSearchTitle">Search provider models</strong>
+                    <span class="ai-provider-model-search-heading-actions">
+                      <span id="aiProviderModelSearchCount" class="helper" data-i18n="llm.modelSearchReady">Enter a model name to search.</span>
+                      <button id="aiProviderRefreshModelsBtn" class="icon-button" type="button" title="Refresh provider models" aria-label="Refresh provider models" data-i18n-title="llm.refreshModels" data-i18n-aria-label="llm.refreshModels"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button>
+                    </span>
+                  </div>
+                  <div class="field-row">
+                    <input id="aiProviderModelInput" type="search" placeholder="Search provider models" autocomplete="off" data-i18n-placeholder="llm.modelSearchPlaceholder" />
+                  </div>
+                  <div id="aiProviderModelSearchResults" class="ai-provider-model-search-results" role="listbox" aria-label="Provider model search results" data-i18n-aria-label="llm.modelSearchResults"></div>
+                </div>
+                <div class="helper" data-i18n="llm.multipleModelsHint">Add multiple models for this provider, then select them from the chat menu.</div>
+                <label class="field-stack ai-provider-context-field" id="aiProviderContextWindowRow">
+                  <span data-i18n="llm.contextWindow">Model context window</span>
+                  <span class="ai-provider-context-window-control">
+                    <select id="aiProviderContextWindowInput" aria-label="Model context window" data-i18n-aria-label="llm.contextWindow">
+                      <option value="4096">4K</option>
+                      <option value="8192">8K</option>
+                      <option value="16384">16K</option>
+                      <option value="32768">32K</option>
+                      <option value="64000">64K</option>
+                      <option value="128000">128K</option>
+                      <option value="custom" data-i18n="llm.contextWindowCustom">Custom</option>
+                    </select>
+                    <input id="aiProviderContextWindowCustomInput" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Exact token limit" data-i18n-placeholder="llm.contextWindowCustomPlaceholder" hidden />
+                    <button id="aiProviderContextWindowResetBtn" class="icon-button" type="button" title="Reset to provider default" aria-label="Reset to provider default" data-i18n-title="llm.contextWindowReset" data-i18n-aria-label="llm.contextWindowReset"><i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i></button>
+                  </span>
+                  <small class="helper" data-i18n="llm.contextWindowHint">Choose a common limit or enter an exact custom value, up to 128K. Reset restores the provider default.</small>
+                </label>
+                <div class="field-row" id="aiProviderStructuredOutputRow">
+                  <select id="aiProviderStructuredOutput">
+                    <option value="jsonSchemaStrict" data-i18n="llm.jsonSchema">JSON Schema (strict)</option>
+                    <option value="jsonObject" data-i18n="llm.jsonObject">JSON object</option>
+                    <option value="promptOnly" data-i18n="llm.promptOnly">Prompt only</option>
+                  </select>
+                </div>
+                <div class="panel-actions">
+                  <button id="aiProviderResetBtn" class="button button--ghost" type="button">
+                    <i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i>
+                    <span data-i18n="llm.resetProvider">Reset current provider</span>
+                  </button>
+                  <button id="aiProviderSaveBtn" class="button button--ghost" data-i18n="llm.save">Save</button>
+                  <button id="aiProviderTestBtn" class="button" data-i18n="llm.test">Test</button>
+                </div>
+                <div id="aiProviderConfigHint" class="helper" data-i18n="llm.configHint">Settings are stored in extension storage for all pages.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="tab-panel tex-panel tex-tool-panel" id="texS2tPanel" role="tabpanel" aria-labelledby="tabTexS2t" hidden>
+                <section id="texS2tSubPanel" class="flat-card tex-tool-card tex-s2t-card" role="region" aria-label="简繁转换">
+                    <div class="card-heading compact-heading"><div><strong>简繁转换</strong><p>上方输入简体中文，下方输入繁體中文；中间按钮可双向转换。</p></div><i class="fa-solid fa-language" aria-hidden="true"></i></div>
+                    <textarea id="texSimplifiedInput" class="compact-textarea tex-s2t-textarea" rows="7" placeholder="输入简体中文"></textarea>
+                    <div class="tex-s2t-convert-actions" aria-label="简繁转换命令"><button id="texClipboardCnToTw" class="button button--primary" type="button"><i class="fa-solid fa-arrow-down" aria-hidden="true"></i><span>简体 → 繁体</span></button><button id="texClipboardTwToCn" class="button button--ghost" type="button"><i class="fa-solid fa-arrow-up" aria-hidden="true"></i><span>繁体 → 简体</span></button></div>
+                    <textarea id="texTraditionalOutput" class="compact-textarea tex-s2t-textarea" rows="7" placeholder="輸入繁體中文"></textarea>
+                    <div class="compact-actions"><button id="texCopySimplified" class="button button--ghost" type="button"><i class="fa-regular fa-copy" aria-hidden="true"></i><span>复制简体</span></button><button id="texCopyTraditional" class="button button--ghost" type="button"><i class="fa-regular fa-copy" aria-hidden="true"></i><span>复制繁体</span></button><button id="texClearS2t" class="button button--ghost" type="button"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span>清空</span></button></div>
+                    <div id="texS2tStatus" class="helper status--muted" role="status"></div>
+                  </section>
+      </section>
+
+      <section class="tab-panel tex-panel tex-tool-panel" id="texBibPanel" role="tabpanel" aria-labelledby="tabTexBib" hidden>
+                <section id="texBibSubPanel" class="flat-card tex-tool-card" role="region" aria-label="BibTeX 转 BBL">
+                    <div class="card-heading compact-heading"><div><strong>BibTeX → BBL</strong><p>将 Bib 数据转换为澳门科技大学毕业论文所需的参考文献格式；支持手动输入，也可以直接读取当前 Overleaf 项目。</p></div><button id="texRefreshBibFiles" class="icon-button" type="button" title="读取当前项目 Bib 文件" aria-label="读取当前项目 Bib 文件"><i class="fa-solid fa-rotate" aria-hidden="true"></i></button></div>
+                    <div class="field-row"><select id="texBibFileSelect"><option value="">选择当前项目的 Bib 文件</option></select><button id="texLoadBibFile" class="button button--ghost" type="button"><i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i><span>读取</span></button></div>
+                    <div class="tex-dual-textareas"><textarea id="texBibInput" class="compact-textarea" rows="10" placeholder="在这里输入 BibTeX"></textarea><textarea id="texBblOutput" class="compact-textarea" rows="10" placeholder="这里生成 BBL"></textarea></div>
+                    <textarea id="texCitekeys" class="compact-textarea" rows="3" placeholder="citekeys"></textarea>
+                    <div class="compact-actions"><button id="texRenameCitekeys" class="button button--ghost" type="button"><i class="fa-solid fa-i-cursor" aria-hidden="true"></i><span>重命名 citekey</span></button><button id="texCopyBib" class="button button--ghost" type="button"><i class="fa-regular fa-copy" aria-hidden="true"></i><span>复制 Bib</span></button><button id="texCopyBbl" class="button button--primary" type="button"><i class="fa-regular fa-copy" aria-hidden="true"></i><span>复制 BBL</span></button><button id="texCopyCitekeys" class="button button--ghost" type="button"><i class="fa-regular fa-copy" aria-hidden="true"></i><span>复制 citekeys</span></button><button id="texClearBib" class="button button--ghost" type="button"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span>清空</span></button></div>
+                    <div id="texBibStatus" class="helper status--muted" role="status"></div>
+                  </section>
+      </section>
+
+      <section class="tab-panel tex-panel tex-tool-panel" id="texTikzPanel" role="tabpanel" aria-labelledby="tabTexTikz" hidden>
+                <section id="texTikzSubPanel" class="flat-card tex-tool-card tex-tikz-card" role="region" aria-label="TikZ PGF 宏命令">
+                    <div class="card-heading compact-heading"><div><strong>TikZ / PGF 宏命令</strong><p>搜索、复制、编辑和管理自定义宏命令。</p></div><button id="texTikzExport" class="icon-button" type="button" title="导出 TikZ JSON" aria-label="导出 TikZ JSON"><i class="fa-solid fa-file-export" aria-hidden="true"></i></button></div>
+                    <input id="texTikzSearch" class="tex-search-input" type="search" placeholder="搜索主题、分类、标签或代码" />
+                    <div class="field-row"><select id="texTikzThemeFilter"><option value="">全部主题</option></select><select id="texTikzCategoryFilter"><option value="">全部分类</option></select></div>
+                    <div id="texTikzTags" class="tex-tikz-tags" role="listbox" aria-label="TikZ 宏命令"></div>
+                    <div class="tex-tikz-editor"><input id="texTikzTag" type="text" placeholder="标签"><input id="texTikzTheme" type="text" placeholder="主题"><input id="texTikzCategory" type="text" placeholder="分类"><textarea id="texTikzExample" class="compact-textarea" rows="5" placeholder="示例"></textarea><textarea id="texTikzMacro" class="compact-textarea" rows="5" placeholder="宏命令"></textarea></div>
+                    <div class="compact-actions"><button id="texTikzNew" class="button button--ghost" type="button"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>新增</span></button><button id="texTikzSave" class="button button--primary" type="button"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span>保存</span></button><button id="texTikzDelete" class="button button--danger" type="button"><i class="fa-solid fa-trash-can" aria-hidden="true"></i><span>删除</span></button><button id="texTikzCopy" class="button button--ghost" type="button"><i class="fa-regular fa-copy" aria-hidden="true"></i><span>复制宏命令</span></button></div>
+                    <div id="texTikzStatus" class="helper status--muted" role="status"></div>
+                  </section>
+      </section>
+
+      <section class="tab-panel tex-panel tex-color-panel" id="texColorPanel" role="tabpanel" aria-labelledby="tabTexColor" hidden>
+        <div id="texColorGroups" class="tex-color-groups" role="list"></div>
+        <div id="texColorInfo" class="tex-color-info" aria-live="polite">将鼠标移到色块上查看颜色信息。</div>
+        <div id="texColorStatus" class="helper status--muted" role="status"></div>
+      </section>
+
+      <section class="tab-panel" id="crossrefPanel" role="tabpanel" aria-labelledby="tabCrossref" hidden>
+        <div class="tool-switch crossref-sub-tabs" role="tablist" aria-label="Crossref tools">
+          <button id="crossrefSearchSubTab" class="tool-switch-button is-active" type="button" role="tab" aria-selected="true" aria-controls="crossrefSearchSubPanel">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <span data-i18n="crossref.searchTab">查询</span>
+          </button>
+          <button id="crossrefPreviewSubTab" class="tool-switch-button" type="button" role="tab" aria-selected="false" aria-controls="crossrefPreviewSubPanel">
+            <i class="fa-solid fa-code" aria-hidden="true"></i>
+            <span data-i18n="crossref.previewTab">Bib 预览</span>
+          </button>
+          <button id="crossrefReferencesSubTab" class="tool-switch-button" type="button" role="tab" aria-selected="false" aria-controls="crossrefReferencesSubPanel">
+            <i class="fa-solid fa-align-left" aria-hidden="true"></i>
+            <span data-i18n="crossref.referencesTab">参考文献</span>
+          </button>
+          <button id="crossrefHistorySubTab" class="tool-switch-button" type="button" role="tab" aria-selected="false" aria-controls="crossrefHistorySubPanel">
+            <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+            <span data-i18n="crossref.historyTab">历史</span>
+          </button>
+        </div>
+
+        <div id="crossrefSearchSubPanel" class="crossref-sub-panel" role="tabpanel" aria-labelledby="crossrefSearchSubTab">
+          <section class="flat-card crossref-batch-card">
+            <form id="crossrefSearchForm" class="crossref-search-form">
+              <div class="doi-composer crossref-doi-composer">
+                <div class="doi-composer-input crossref-input-wrap">
+                  <textarea id="crossrefSearchInput" class="crossref-search-input doi-file-drop-target" rows="5" wrap="off" autocomplete="off" placeholder="每行输入一条 DOI、题名、作者或参考文献" data-i18n-placeholder="crossref.searchPlaceholder" title="Drop DOI files to extract DOI values" data-i18n-title="crossref.fileDropTitle"></textarea>
+                  <div class="doi-drop-prompt" aria-hidden="true">
+                    <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>
+                    <strong data-i18n="crossref.fileDropPrompt">Release to import DOI values</strong>
+                    <span data-i18n="crossref.fileDropFormats">TXT, MD, JSON, XML, RIS, CSV, and BIB files</span>
+                  </div>
+                </div>
+                <div class="doi-composer-footer crossref-doi-footer">
+                  <div class="crossref-input-hint" role="note">
+                    <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
+                    <span data-i18n="crossref.fileDropHint">可拖入 TXT、MD、JSON、XML、RIS、CSV 或 BIB 文件，快速提取。</span>
+                  </div>
+                  <div class="crossref-batch-heading">
+                    <i class="fa-solid fa-sliders" aria-hidden="true"></i>
+                    <span data-i18n="crossref.batchActions">批量操作</span>
+                    <span id="crossrefBatchInputCount" class="crossref-batch-input-count">0 条</span>
+                  </div>
+                  <div class="crossref-batch-actions">
+                    <button id="crossrefClearInputBtn" class="button button--ghost" type="button">
+                      <i class="fa-solid fa-eraser" aria-hidden="true"></i>
+                      <span data-i18n="crossref.clearInputs">清空输入和结果</span>
+                    </button>
+                    <button id="crossrefSearchBtn" class="button button--primary" type="submit">
+                      <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                      <span data-i18n="crossref.search">批量查询</span>
+                    </button>
+                  </div>
+                  <div id="crossrefBatchProgress" class="crossref-batch-progress" hidden>
+                    <div class="crossref-batch-progress__track"><span id="crossrefBatchProgressBar"></span></div>
+                    <span id="crossrefBatchProgressText">0/0</span>
+                  </div>
+                </div>
+              </div>
+            </form>
+          </section>
+          <section class="flat-card crossref-results-card">
+            <div id="crossrefSearchStatus" class="helper status--muted" role="status" data-i18n="crossref.ready">请输入检索内容。</div>
+            <div class="crossref-list-toolbar">
+              <label><input id="crossrefSelectAllResults" type="checkbox" /> <span data-i18n="crossref.selectAll">全选</span></label>
+              <div class="crossref-result-meta">
+                <span id="crossrefResultCount">0</span>
+                <span class="crossref-result-hint" data-i18n="crossref.resultHint">勾选预览 BibTeX；星标保存并置顶历史</span>
+              </div>
+            </div>
+            <div id="crossrefSearchResults" class="crossref-record-list"></div>
+          </section>
+        </div>
+
+        <div id="crossrefPreviewSubPanel" class="crossref-sub-panel" role="tabpanel" aria-labelledby="crossrefPreviewSubTab" hidden>
+          <section class="flat-card crossref-tool-card">
+            <div class="crossref-action-toolbar">
+              <strong id="crossrefPreviewCount" data-i18n="crossref.noneSelected">未选择文献</strong>
+              <div>
+                <button id="crossrefCopyPreviewBtn" class="button button--ghost" type="button" disabled>
+                  <i class="fa-regular fa-copy" aria-hidden="true"></i>
+                  <span data-i18n="crossref.copyBib">复制 BibTeX</span>
+                </button>
+                <button id="crossrefExportPreviewBtn" class="button button--primary" type="button" disabled>
+                  <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+                  <span data-i18n="crossref.exportBib">导出 .bib</span>
+                </button>
+              </div>
+            </div>
+            <pre id="crossrefBibPreview" class="crossref-bib-preview" data-i18n="crossref.previewEmpty">选择一篇或多篇文献后将在此显示 BibTeX。</pre>
+            <div id="crossrefPreviewStatus" class="helper status--muted" role="status"></div>
+          </section>
+        </div>
+
+        <div id="crossrefReferencesSubPanel" class="crossref-sub-panel" role="tabpanel" aria-labelledby="crossrefReferencesSubTab" hidden>
+          <section class="flat-card crossref-tool-card">
+            <div class="crossref-reference-style-row">
+              <div class="crossref-reference-style-select">
+                <select id="crossrefCslStyleSelect" aria-label="Citation style" data-i18n-aria-label="crossref.citationStyle"></select>
+                <small id="crossrefCslStyleOfficialName" class="crossref-csl-style-official-name" aria-live="polite"></small>
+              </div>
+              <button id="crossrefOpenStyleManagerBtn" class="button button--ghost" type="button" aria-expanded="false" aria-controls="crossrefCslManager">
+                <i class="fa-solid fa-cloud-arrow-down" aria-hidden="true"></i>
+                <span>CSL+</span>
+              </button>
+            </div>
+            <div id="crossrefCslManager" class="crossref-csl-manager" hidden>
+              <div class="crossref-csl-manager-heading">
+                <div>
+                  <strong data-i18n="crossref.cslManagerTitle">Citation styles</strong>
+                  <span data-i18n="crossref.cslManagerDescription">Find and install styles from the official CSL repository.</span>
+                </div>
+                <button id="crossrefCloseStyleManagerBtn" class="icon-button" type="button" title="Close" aria-label="Close" data-i18n-title="crossref.closeStyles" data-i18n-aria-label="crossref.closeStyles">
+                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+              </div>
+              <form id="crossrefCslSearchForm" class="crossref-csl-search">
+                <input id="crossrefCslSearchInput" type="search" autocomplete="off" minlength="2" placeholder="Journal or style name" data-i18n-placeholder="crossref.cslSearchPlaceholder" />
+                <button id="crossrefCslSearchBtn" class="button button--primary" type="submit">
+                  <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                  <span data-i18n="crossref.cslSearch">Search</span>
+                </button>
+              </form>
+              <div id="crossrefCslSearchStatus" class="helper status--muted" role="status" data-i18n="crossref.cslSearchReady">Search the official CSL repository.</div>
+              <div id="crossrefCslSearchResults" class="crossref-csl-search-results"></div>
+            </div>
+            <div class="crossref-action-toolbar">
+              <strong id="crossrefReferencesCount" data-i18n="crossref.noneSelected">未选择文献</strong>
+              <div>
+                <button id="crossrefReferenceWrapBtn" class="icon-button crossref-wrap-toggle" type="button" aria-pressed="false" title="参考文献自动换行" aria-label="参考文献自动换行" data-i18n-title="crossref.wrapReferences" data-i18n-aria-label="crossref.wrapReferences">
+                  <i class="fa-solid fa-text-width" aria-hidden="true"></i>
+                </button>
+                <button id="crossrefCopyReferencesBtn" class="button button--ghost" type="button" disabled>
+                  <i class="fa-regular fa-copy" aria-hidden="true"></i>
+                  <span data-i18n="crossref.copyReferences">复制到 Word</span>
+                </button>
+                <button id="crossrefExportReferencesBtn" class="button button--primary" type="button" disabled>
+                  <i class="fa-regular fa-file-word" aria-hidden="true"></i>
+                  <span data-i18n="crossref.exportDocx">导出 DOCX</span>
+                </button>
+              </div>
+            </div>
+            <div id="crossrefReferencesPreview" class="crossref-references-preview">
+              <div class="crossref-empty" data-i18n="crossref.referencesEmpty">选择一篇或多篇文献后将在此生成参考文献列表。</div>
+            </div>
+            <div id="crossrefReferencesStatus" class="helper status--muted" role="status"></div>
+          </section>
+        </div>
+
+        <div id="crossrefHistorySubPanel" class="crossref-sub-panel" role="tabpanel" aria-labelledby="crossrefHistorySubTab" hidden>
+          <section class="flat-card crossref-tool-card">
+            <div class="crossref-list-toolbar crossref-history-toolbar">
+              <label><input id="crossrefSelectAllHistory" type="checkbox" /> <span data-i18n="crossref.selectAll">全选</span></label>
+              <div>
+                <button id="crossrefRestoreHistoryBtn" class="button button--ghost crossref-history-action" type="button" disabled title="从本地历史恢复所选文献" aria-label="从本地历史恢复所选文献" data-i18n-title="crossref.restoreSelected" data-i18n-aria-label="crossref.restoreSelected">
+                  <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+                  <span data-i18n="crossref.restoreAction">恢复</span>
+                </button>
+                <button id="crossrefCopyHistoryBtn" class="button button--ghost crossref-history-action" type="button" disabled title="复制所选 BibTeX" aria-label="复制所选 BibTeX" data-i18n-title="crossref.copySelected" data-i18n-aria-label="crossref.copySelected">
+                  <i class="fa-regular fa-copy" aria-hidden="true"></i>
+                  <span data-i18n="crossref.copyAction">复制</span>
+                </button>
+                <button id="crossrefExportHistoryBtn" class="button button--ghost crossref-history-action" type="button" disabled title="导出所选 BibTeX" aria-label="导出所选 BibTeX" data-i18n-title="crossref.exportSelected" data-i18n-aria-label="crossref.exportSelected">
+                  <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+                  <span data-i18n="crossref.exportAction">导出</span>
+                </button>
+                <button id="crossrefClearHistoryBtn" class="button button--ghost crossref-history-action" type="button" title="删除历史，星标项保留" aria-label="删除历史，星标项保留" data-i18n-title="crossref.deleteHistory" data-i18n-aria-label="crossref.deleteHistory">
+                  <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+                  <span data-i18n="crossref.deleteAction">删除</span>
+                </button>
+                <button id="crossrefClearAllHistoryBtn" class="button button--ghost crossref-history-action" type="button" title="清空全部 Crossref 历史和缓存" aria-label="清空全部 Crossref 历史和缓存" data-i18n-title="crossref.clearAll" data-i18n-aria-label="crossref.clearAll">
+                  <i class="fa-solid fa-broom" aria-hidden="true"></i>
+                  <span data-i18n="crossref.clearAllAction">清空全部</span>
+                </button>
+              </div>
+            </div>
+            <div id="crossrefHistoryEmpty" class="crossref-empty" data-i18n="crossref.historyEmpty">暂无查询历史。</div>
+            <div id="crossrefHistoryList" class="crossref-record-list"></div>
+            <div id="crossrefHistoryStatus" class="helper status--muted" role="status"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="tab-panel" id="settingsPanel" role="tabpanel" aria-labelledby="tabSettings" hidden>
+        <div class="tool-switch settings-sub-tabs" role="tablist" aria-label="Settings sections">
+          <button id="settingsLanguageSubTab" class="tool-switch-button" type="button" role="tab" aria-selected="false" aria-controls="settingsLanguageSubPanel">
+            <i class="fa-solid fa-language" aria-hidden="true"></i>
+            <span data-i18n="settings.languageTab">界面</span>
+          </button>
+          <button id="settingsSupportSubTab" class="tool-switch-button is-active" type="button" role="tab" aria-selected="true" aria-controls="settingsSupportSubPanel">
+            <i class="fa-solid fa-heart" aria-hidden="true"></i>
+            <span data-i18n="settings.supportTab">支持</span>
+          </button>
+          <button id="settingsAboutSubTab" class="tool-switch-button" type="button" role="tab" aria-selected="false" aria-controls="settingsAboutSubPanel">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+            <span data-i18n="settings.aboutTab">关于</span>
+          </button>
+        </div>
+
+        <div id="settingsLanguageSubPanel" class="settings-sub-panel" role="tabpanel" aria-labelledby="settingsLanguageSubTab" hidden>
+          <section class="flat-card settings-language-card">
+            <div class="card-heading compact-heading">
+              <div>
+                <strong data-i18n="settings.languageTitle">界面语言</strong>
+                <p data-i18n="settings.languageDescription">选择 WOS Aide 的显示语言。</p>
+              </div>
+              <i class="fa-solid fa-language" aria-hidden="true"></i>
+            </div>
+            <div class="settings-language-control">
+              <div class="language-switch settings-language-switch" data-language-switch role="group" aria-label="Language" data-i18n-aria-label="language.label">
+                <button class="language-option" data-lang-option="zh" type="button" aria-pressed="true">中</button>
+                <button class="language-option" data-lang-option="en" type="button" aria-pressed="false">EN</button>
+              </div>
+              <span class="language-shortcut-hint" data-i18n="settings.languageShortcut">快捷键：⌘⇧E（Mac）/ Ctrl⇧E（Win）</span>
+            </div>
+            <div class="settings-tabs-heading" data-i18n="settings.tabsTitle">顶部标签页</div>
+            <div class="settings-option-row">
+              <div>
+                <strong data-i18n="settings.showLlmTab">显示 LLM 标签页</strong>
+                <span data-i18n="settings.showLlmTabDescription">在顶部导航中显示 LLM 查询工具。</span>
+              </div>
+              <label class="settings-toggle">
+                <input id="settingsShowLlmTab" type="checkbox" aria-label="显示 LLM 标签页" data-i18n-aria-label="settings.showLlmTab" />
+                <span aria-hidden="true"></span>
+              </label>
+            </div>
+            <div class="settings-option-row">
+              <div><strong data-i18n="settings.showCrossrefTab">显示 Crossref 标签页</strong><span data-i18n="settings.showCrossrefTabDescription">在顶部导航中显示 Crossref 文献查询。</span></div>
+              <label class="settings-toggle"><input id="settingsShowCrossrefTab" type="checkbox" aria-label="显示 Crossref 标签页" data-i18n-aria-label="settings.showCrossrefTab" /><span aria-hidden="true"></span></label>
+            </div>
+            <div class="settings-option-row">
+              <div><strong data-i18n="settings.showTexS2tTab">显示简繁转换标签页</strong><span data-i18n="settings.showTexS2tTabDescription">在顶部导航中显示简繁转换工具。</span></div>
+              <label class="settings-toggle"><input id="settingsShowTexS2tTab" type="checkbox" aria-label="显示简繁转换标签页" data-i18n-aria-label="settings.showTexS2tTab" /><span aria-hidden="true"></span></label>
+            </div>
+            <div class="settings-option-row">
+              <div><strong data-i18n="settings.showTexBibTab">显示 BibTeX 转 BBL 标签页</strong><span data-i18n="settings.showTexBibTabDescription">在顶部导航中显示 BibTeX 转 BBL 工具。</span></div>
+              <label class="settings-toggle"><input id="settingsShowTexBibTab" type="checkbox" aria-label="显示 BibTeX 转 BBL 标签页" data-i18n-aria-label="settings.showTexBibTab" /><span aria-hidden="true"></span></label>
+            </div>
+            <div class="settings-option-row">
+              <div><strong data-i18n="settings.showTexTikzTab">显示 TikZ / PGF 标签页</strong><span data-i18n="settings.showTexTikzTabDescription">在顶部导航中显示 TikZ / PGF 宏命令工具。</span></div>
+              <label class="settings-toggle"><input id="settingsShowTexTikzTab" type="checkbox" aria-label="显示 TikZ / PGF 标签页" data-i18n-aria-label="settings.showTexTikzTab" /><span aria-hidden="true"></span></label>
+            </div>
+            <div class="settings-option-row">
+              <div><strong data-i18n="settings.showTexColorTab">显示 LaTeX Colors 标签页</strong><span data-i18n="settings.showTexColorTabDescription">在顶部导航中显示 LaTeX 颜色工具。</span></div>
+              <label class="settings-toggle"><input id="settingsShowTexColorTab" type="checkbox" aria-label="显示 LaTeX Colors 标签页" data-i18n-aria-label="settings.showTexColorTab" /><span aria-hidden="true"></span></label>
+            </div>
+          </section>
+        </div>
+
+        <div id="settingsSupportSubPanel" class="settings-sub-panel" role="tabpanel" aria-labelledby="settingsSupportSubTab" hidden>
+          <section class="flat-card settings-support-card">
+            <p class="settings-support-notice" data-i18n="settings.supportDescription">如果 WOS Aide 为你的研究工作带来帮助，欢迎自愿支持开发者。</p>
+            <div class="settings-support-amounts" role="list" aria-label="Suggested support amounts" data-i18n-aria-label="settings.supportAmountsLabel">
+              <div role="listitem"><strong>¥0.66</strong><span data-i18n="settings.supportAmountOne">小小地支持</span></div>
+              <div role="listitem"><strong>¥0.99</strong><span data-i18n="settings.supportAmountSix">大大的支持</span></div>
+              <div role="listitem"><strong>¥1</strong><span data-i18n="settings.supportAmountSixtySix">一小杯茶水</span></div>
+            </div>
+            <div class="settings-support-payment-switch" role="group" aria-label="支持方式" data-i18n-aria-label="settings.supportPaymentLabel">
+              <button id="supportPaymentWechat" class="settings-support-payment-option is-active" type="button" data-support-payment="wechat" aria-pressed="true">
+                <i class="fa-brands fa-weixin" aria-hidden="true"></i>
+                <span data-i18n="settings.supportWechat">微信支付</span>
+              </button>
+              <button id="supportPaymentAlipay" class="settings-support-payment-option" type="button" data-support-payment="alipay" aria-pressed="false">
+                <i class="fa-brands fa-alipay" aria-hidden="true"></i>
+                <span data-i18n="settings.supportAlipay">支付宝</span>
+              </button>
+              <button id="supportPaymentBrowserExtension" class="settings-support-payment-option" type="button" data-support-payment="browser-extension" aria-pressed="false">
+                <i class="fa-brands fa-chrome" aria-hidden="true"></i>
+                <span data-i18n="settings.supportBrowserExtension">浏览器扩展</span>
+              </button>
+              <button id="supportPaymentMacApp" class="settings-support-payment-option" type="button" data-support-payment="mac-app" aria-pressed="false">
+                <i class="fa-brands fa-apple" aria-hidden="true"></i>
+                <span data-i18n="settings.supportMacApp">macOS App</span>
+              </button>
+            </div>
+            <div class="settings-support-payment-content">
+              <figure id="supportWechatQr" class="settings-support-qr" data-support-payment-panel="wechat">
+                <div class="settings-support-payment-label">
+                  <i class="fa-brands fa-weixin" aria-hidden="true"></i>
+                  <strong data-i18n="settings.supportWechat">微信支付</strong>
+                </div>
+                <figcaption data-i18n="settings.supportWechatScan">使用微信扫描收款码，金额可自行选择。</figcaption>
+                <img src="images/wechat-support-qr.png" width="400" height="400" alt="微信收款码" data-i18n-alt="settings.supportWechatQrAlt" />
+              </figure>
+              <figure id="supportAlipayQr" class="settings-support-qr" data-support-payment-panel="alipay" hidden>
+                <div class="settings-support-payment-label">
+                  <i class="fa-brands fa-alipay" aria-hidden="true"></i>
+                  <strong data-i18n="settings.supportAlipay">支付宝</strong>
+                </div>
+                <figcaption data-i18n="settings.supportAlipayScan">使用支付宝扫描收款码，金额可自行选择。</figcaption>
+                <img src="images/alipay-support-qr.png" width="400" height="400" alt="支付宝收款码" data-i18n-alt="settings.supportAlipayQrAlt" />
+              </figure>
+              <section id="supportBrowserExtensionPanel" class="settings-support-extension" data-support-payment-panel="browser-extension" hidden>
+                <div class="settings-support-extension-product">
+                  <img src="icons/wosaide-browser-extension.png" width="72" height="72" alt="WOS Aide" data-i18n-alt="settings.supportBrowserExtensionIconAlt" />
+                  <div>
+                    <strong data-i18n="settings.supportBrowserExtensionTitle">WOS Aide 浏览器扩展</strong>
+                    <span data-i18n="settings.supportBrowserExtensionPlatform">Chrome Web Store</span>
+                  </div>
+                </div>
+                <p data-i18n="settings.supportBrowserExtensionDescription">让 Web of Science 检索更快、更顺手。批量处理 DOI、查询期刊等级、解析全文、生成 AI 检索式，一站式完成常见科研任务。</p>
+                <a class="button button--primary settings-support-extension-link" href="https://chromewebstore.google.com/detail/gjlfmbmaaojhdmodjpocdpknjmjjjcjb?utm_source=item-share-cb" target="_blank" rel="noopener noreferrer">
+                  <i class="fa-brands fa-chrome" aria-hidden="true"></i>
+                  <span data-i18n="settings.supportBrowserExtensionAction">打开 Chrome Web Store</span>
+                </a>
+              </section>
+              <section id="supportMacAppPanel" class="settings-support-mac-app" data-support-payment-panel="mac-app" hidden>
+                <a class="settings-support-mac-video-link" href="https://apps.apple.com/app/wos-aide-bar/id6795536028" target="_blank" rel="noopener noreferrer" aria-label="在 App Store 中查看 WOS Aide Bar">
+                  <video id="supportMacAppVideo" class="settings-support-mac-video" width="1080" height="1920" autoplay muted playsinline preload="metadata" aria-label="WOS Aide Bar macOS App 演示" data-i18n-aria-label="settings.supportMacAppVideo">
+                    <source src="videos/wos-aide-bar-macos-app.mp4" type="video/mp4" />
+                  </video>
+                </a>
+                <div class="settings-support-app-actions">
+                  <a class="button" href="https://apps.apple.com/app/wos-aide-bar/id6795536028" target="_blank" rel="noopener noreferrer">
+                    <i class="fa-brands fa-apple" aria-hidden="true"></i>
+                    <span data-i18n="settings.supportMacAppStore">App Store</span>
+                  </a>
+                  <a class="button button--ghost" href="https://wosaide.github.io/wosaide-bar-site/" target="_blank" rel="noopener noreferrer">
+                    <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                    <span data-i18n="settings.supportMacAppWebsite">访问官网</span>
+                  </a>
+                </div>
+              </section>
+              <p class="settings-support-thanks" data-i18n="settings.supportThanks">感谢你的认可与支持，我们会继续改进 WOS Aide。</p>
+            </div>
+          </section>
+        </div>
+
+        <div id="settingsAboutSubPanel" class="settings-sub-panel" role="tabpanel" aria-labelledby="settingsAboutSubTab" hidden>
+          <section class="flat-card settings-about-card">
+            <div class="settings-about-product">
+              <img src="icons/icon_48.png" width="48" height="48" alt="" />
+              <div>
+                <strong>Overleaf texAide</strong>
+                <span><span data-i18n="settings.version">版本</span> <b id="settingsExtensionVersion">-</b></span>
+              </div>
+            </div>
+            <dl class="settings-about-list">
+              <div>
+                <dt data-i18n="settings.description">说明</dt>
+                <dd data-i18n="settings.descriptionText">面向 Overleaf TeX、Web of Science、CNKI、DOI、LLM 查询和期刊等级的研究工作流扩展。</dd>
+              </div>
+              <div>
+                <dt data-i18n="settings.author">作者</dt>
+                <dd>iihciyekub</dd>
+              </div>
+              <div>
+                <dt data-i18n="settings.homepage">主页</dt>
+                <dd><a href="https://github.com/iihciyekub/wos-aide-extension" target="_blank" rel="noopener noreferrer">github.com/iihciyekub/wos-aide-extension</a></dd>
+              </div>
+            </dl>
+          </section>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script src="tex/opencc.js"></script>
+  <script src="tex/cnchar.min.js"></script>
+  <script src="tex/cnchar-trad.js"></script>
+  <script src="tex/tikzPGF.json.js"></script>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

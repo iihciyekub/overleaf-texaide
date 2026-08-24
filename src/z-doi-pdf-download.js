@@ -1,0 +1,1767 @@
+/**
+ * 批量下载 PDF 工具
+ * Dec 26, 2025 at 11:34:53
+ */
+
+const SO_temp = {
+    "MOSM/MS": "/doi/pdf/{doi}?download=true",
+    "Wiley": "/doi/pdfdirect/{doi}?download=true",
+    "SAGE": "/doi/pdf/{doi}?download=true",
+    "Springer": "/content/pdf/{doi}.pdf",
+    "tandfonline": "/doi/pdf/{doi}?needAccess=true"
+};
+
+const { buildSynchronizedPdfProvenance, deduplicatePdfRecordsBySha } = require("./pdf-index-record");
+const { createAdaptiveConcurrentRunner, normalizeConcurrency } = require("./download-worker-pool");
+const { directoryLockName, projectHandleKeyForTab, runWithWebLock } = require("./pdf-tab-directory");
+const { doiFromPdfFileName, pdfFileNameForDoi } = require("./pdf-file-name");
+const { applyTranslations, message, LANG_STORAGE_KEY } = require("./i18n");
+
+const isDoiSidePanelSurface = Boolean(
+    globalThis.__WOS_AIDE_DOI_SIDE_PANEL__ || document.body?.dataset?.surface === "sidepanel"
+);
+
+const getFallbackTabContextId = () => {
+    const storageKey = "wos_aide_pdf_tab_context";
+    try {
+        let contextId = sessionStorage.getItem(storageKey);
+        if (!contextId) {
+            contextId = globalThis.crypto?.randomUUID?.()
+                || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            sessionStorage.setItem(storageKey, contextId);
+        }
+        return `session-${contextId}`;
+    } catch (_error) {
+        return `page-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+};
+
+const injectedTabContextId = String(
+    globalThis.__WOS_AIDE_TAB_ID__ || document.currentScript?.dataset?.wosAideTabId || ""
+);
+const pdfTabContextId = isDoiSidePanelSurface ? "sidepanel" : (injectedTabContextId || getFallbackTabContextId());
+let currentLanguage = "zh";
+
+const doiMessage = (key, params = {}) => {
+    let value = message(currentLanguage, key);
+    Object.entries(params).forEach(([name, replacement]) => {
+        value = value.replace(new RegExp(`\\{${name}\\}`, "g"), String(replacement));
+    });
+    return value;
+};
+
+
+/**
+ * PDF 批量下载工具
+ - 先用机构登陆对应的期刊网站,可以下载pdf后,再运行此脚本
+ * */
+(function () {
+    // 检查并删除已存在的实例
+    const existing = document.getElementById("ref-paper-downloader");
+    if (existing) {
+        existing.__dragger?.destroy?.();
+        existing.remove();
+        console.log("[DOI PDF Download] Reloading");
+    }
+
+    // ---- localStorage 读取默认模板 ----
+    const TEMPLATE_KEY = "pdf_download_template";
+    const TEMPLATE_SELECTION_KEY = "pdf_download_template_selection";
+    const LEGACY_TIMER_KEY = "pdf_download_timer";
+    const LEGACY_BATCH_MIN_KEY = "pdf_download_batch_minutes";
+    const DOWNLOAD_DELAY_SECONDS_KEY = "pdf_download_delay_seconds";
+    const BATCH_INTERVAL_SECONDS_KEY = "pdf_download_batch_interval_seconds";
+    const BATCH_SIZE_KEY = "pdf_download_batch_size";
+    const DOWNLOAD_CONCURRENCY_KEY = "pdf_download_concurrency";
+    const MAX_DOWNLOAD_CONCURRENCY = 10;
+    const PDF_INDEX_FILE_NAME = "pdf-download-index.json";
+    const PROJECT_HANDLE_STORAGE_KEY = projectHandleKeyForTab(pdfTabContextId);
+    const DIRECTORY_PICKER_ID = `wosAide-pdf-${pdfTabContextId.replace(/[^a-zA-Z0-9_-]/g, "").slice(-16)}`;
+    const POS_TOP_KEY = "pdf_download_panel_top";
+    const POS_LEFT_KEY = "pdf_download_panel_left";
+    
+    const readStorage = (key, fallback) => {
+        try {
+            const value = localStorage.getItem(key);
+            return value === null ? fallback : value;
+        } catch (error) {
+            console.warn("[DOI PDF Download] Failed to read localStorage:", error);
+            return fallback;
+        }
+    };
+
+    const writeStorage = (key, value) => {
+        try {
+            localStorage.setItem(key, value);
+        } catch (error) {
+            console.warn("[DOI PDF Download] Failed to write localStorage:", error);
+        }
+    };
+
+    const readSecondsSetting = (key, legacyKey, legacyFallback, legacyMultiplier) => {
+        const savedValue = readStorage(key, null);
+        if (savedValue !== null && Number.isFinite(Number(savedValue)) && Number(savedValue) >= 0) {
+            return String(Number(savedValue));
+        }
+
+        const legacyValue = Number(readStorage(legacyKey, legacyFallback));
+        const seconds = Number.isFinite(legacyValue) && legacyValue >= 0
+            ? legacyValue * legacyMultiplier
+            : Number(legacyFallback) * legacyMultiplier;
+        writeStorage(key, String(seconds));
+        return String(seconds);
+    };
+
+    // ========== 下载目录选择（与 DOI Query 共用） ==========
+    let downloadDirHandle = null;
+    let downloadDirName = '';
+
+    const openProjectHandleStore = async () => new Promise((resolve, reject) => {
+        const request = indexedDB.open('wosaide-toolkit', 1);
+        request.onupgradeneeded = () => {
+            request.result.createObjectStore('projectHandles');
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+
+    const setStoredProjectHandle = async (handle) => {
+        if (!handle) return;
+        const db = await openProjectHandleStore();
+        await new Promise((resolve) => {
+            const tx = db.transaction('projectHandles', 'readwrite');
+            const store = tx.objectStore('projectHandles');
+            store.put(handle, PROJECT_HANDLE_STORAGE_KEY);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+        });
+    };
+
+    const loadStoredProjectHandle = async () => {
+        try {
+            const db = await openProjectHandleStore();
+            return await new Promise((resolve) => {
+                const tx = db.transaction('projectHandles', 'readonly');
+                const store = tx.objectStore('projectHandles');
+                const req = store.get(PROJECT_HANDLE_STORAGE_KEY);
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => resolve(null);
+            });
+        } catch (error) {
+            console.warn("[DOI PDF Download] Failed to load directory handle:", error);
+            return null;
+        }
+    };
+
+    const ensureDirectoryPermission = async (handle) => {
+        try {
+            const opts = { mode: 'readwrite' };
+            if (await handle.queryPermission(opts) === 'granted') return true;
+            return (await handle.requestPermission(opts)) === 'granted';
+        } catch (error) {
+            console.warn("[DOI PDF Download] Directory permission check failed:", error);
+            return false;
+        }
+    };
+
+    const chooseDownloadDirectory = async () => {
+        if (!window.showDirectoryPicker) {
+            throw new Error('Directory picker is not supported');
+        }
+        const handle = await window.showDirectoryPicker({ id: DIRECTORY_PICKER_ID, mode: 'readwrite' });
+        const granted = await ensureDirectoryPermission(handle);
+        if (!granted) {
+            throw new Error('Write permission not granted');
+        }
+        downloadDirHandle = handle;
+        downloadDirName = handle.name || '';
+        window.wosAideDirectoryHandle = handle;
+        await setStoredProjectHandle(handle);
+        return handle;
+    };
+
+    window.doiPdfDownload = window.doiPdfDownload || {};
+    window.doiPdfDownload.selectDownloadDirectory = chooseDownloadDirectory;
+
+    const defaultTemplate = "/doi/pdf/{doi}?download=true";
+    const savedTemplate = readStorage(TEMPLATE_KEY, defaultTemplate);
+    const savedTemplateSelection = readStorage(TEMPLATE_SELECTION_KEY, "");
+    const savedDownloadDelaySeconds = readSecondsSetting(
+        DOWNLOAD_DELAY_SECONDS_KEY,
+        LEGACY_TIMER_KEY,
+        "10000",
+        0.001
+    );
+    const savedBatchIntervalSeconds = readSecondsSetting(
+        BATCH_INTERVAL_SECONDS_KEY,
+        LEGACY_BATCH_MIN_KEY,
+        "35",
+        60
+    );
+    const savedBatchSize = readStorage(BATCH_SIZE_KEY, "50");
+    const savedDownloadConcurrency = String(normalizeConcurrency(
+        readStorage(DOWNLOAD_CONCURRENCY_KEY, "1"),
+        MAX_DOWNLOAD_CONCURRENCY,
+        1
+    ));
+    let liveDownloadDelayMs = Math.round(Number(savedDownloadDelaySeconds) * 1000);
+    let liveBatchIntervalMs = Math.round(Number(savedBatchIntervalSeconds) * 1000);
+    let liveBatchSize = Math.max(1, Math.floor(Number(savedBatchSize)) || 50);
+    let liveDownloadConcurrency = Number(savedDownloadConcurrency);
+    let activeDownloadRuntime = null;
+    const savedTop = readStorage(POS_TOP_KEY, "120px");
+    const savedLeft = readStorage(POS_LEFT_KEY, null);
+    const PANEL_WIDTH = 480;
+    const PANEL_MARGIN = 8;
+    let activePageUrl = "";
+
+    const refreshActivePageUrl = async () => {
+        if (!isDoiSidePanelSurface || !globalThis.chrome?.tabs?.query) return activePageUrl;
+        const tabs = await new Promise(resolve => {
+            globalThis.chrome.tabs.query({ active: true, currentWindow: true }, result => resolve(result || []));
+        });
+        activePageUrl = tabs[0]?.url || activePageUrl;
+        return activePageUrl;
+    };
+
+    const activePageOriginPattern = () => {
+        try {
+            const parsed = new URL(activePageUrl);
+            return /^https?:$/.test(parsed.protocol) ? `${parsed.origin}/*` : "";
+        } catch (_error) {
+            return "";
+        }
+    };
+
+    const requestActivePagePermission = (origin) => new Promise(resolve => {
+        globalThis.chrome.permissions.request({ origins: [origin] }, granted => resolve(Boolean(granted)));
+    });
+
+    const ensureActivePagePermission = () => {
+        if (!isDoiSidePanelSurface) return true;
+        if (!globalThis.chrome?.permissions) return false;
+        const currentOrigin = activePageOriginPattern();
+        if (currentOrigin) return requestActivePagePermission(currentOrigin);
+        return refreshActivePageUrl().then(() => {
+            const refreshedOrigin = activePageOriginPattern();
+            return refreshedOrigin ? requestActivePagePermission(refreshedOrigin) : false;
+        });
+    };
+
+    if (isDoiSidePanelSurface) {
+        void refreshActivePageUrl();
+        globalThis.chrome?.tabs?.onActivated?.addListener(() => { void refreshActivePageUrl(); });
+        globalThis.chrome?.tabs?.onUpdated?.addListener((_tabId, changeInfo, tab) => {
+            if (tab.active && (changeInfo.url || changeInfo.status === "complete")) void refreshActivePageUrl();
+        });
+    }
+
+
+    // ==============================
+    //  UI 创建
+    // ==============================
+    const box = document.createElement("div");
+    box.id = "ref-paper-downloader";
+    box.className = "doi-batch-panel";
+    box.style.position = "fixed";
+    const { top, left } = isDoiSidePanelSurface ? { top: 0, left: 0 } : window.clampPanelPosition({
+        top: savedTop,
+        left: savedLeft,
+        defaultTop: 120,
+        defaultLeft: window.innerWidth - PANEL_WIDTH - PANEL_MARGIN,
+        width: PANEL_WIDTH,
+        height: 360,
+        margin: 8
+    });
+    box.style.top = `${Math.round(top)}px`;
+    box.style.left = `${Math.round(left)}px`;
+    box.style.right = "auto";
+    box.style.transform = "none";
+    box.style.width = `${PANEL_WIDTH}px`;
+    box.style.zIndex = 999999;
+    box.style.background = "#ffffff";
+    box.style.padding = "0";
+    box.style.borderRadius = "10px";
+    box.style.boxSizing = "border-box";
+    box.style.color = "#18181b";
+    box.style.fontSize = "14px";
+    box.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    box.style.display = isDoiSidePanelSurface ? "flex" : "none";
+    box.style.flexDirection = "column";
+    box.style.border = "1px solid #d4d4d8";
+    box.style.boxShadow = "0 16px 40px rgba(0, 0, 0, 0.16)";
+    box.style.overflow = "hidden";
+    const sidePanelHost = isDoiSidePanelSurface ? document.getElementById("doiBatchHost") : null;
+    (sidePanelHost || document.body).appendChild(box);
+    if (isDoiSidePanelSurface) {
+        box.style.position = "relative";
+        box.style.inset = "auto";
+        box.style.width = "100%";
+        box.style.zIndex = "auto";
+        box.style.background = "transparent";
+        box.style.border = "0";
+        box.style.borderRadius = "0";
+        box.style.boxShadow = "none";
+        box.style.overflow = "visible";
+    }
+
+    // 标题栏容器
+    const titleBar = document.createElement("div");
+    titleBar.className = "doi-batch-titlebar";
+    titleBar.style.display = "flex";
+    titleBar.style.justifyContent = "space-between";
+    titleBar.style.alignItems = "center";
+    titleBar.style.cursor = "move";
+    titleBar.style.flex = "0 0 auto";
+    titleBar.style.width = "100%";
+    titleBar.style.minHeight = "46px";
+    titleBar.style.padding = "8px 12px 8px 14px";
+    titleBar.style.background = "#18181b";
+    titleBar.style.borderBottom = "1px solid #27272a";
+    titleBar.style.borderRadius = "9px 9px 0 0";
+    titleBar.style.boxSizing = "border-box";
+    box.appendChild(titleBar);
+    if (isDoiSidePanelSurface) titleBar.style.display = "none";
+
+    // 拖动手柄
+    const dragHandle = document.createElement("div");
+    dragHandle.textContent = "PDF Batch Downloader";
+    dragHandle.setAttribute("data-i18n", "doi.title");
+    dragHandle.style.fontWeight = "650";
+    dragHandle.style.fontSize = "14px";
+    dragHandle.style.cursor = "inherit";
+    dragHandle.style.userSelect = "none";
+    dragHandle.style.color = "#fff";
+    dragHandle.style.lineHeight = "1";
+    titleBar.appendChild(dragHandle);
+
+    // 关闭按钮
+    const closeBtn = document.createElement("button");
+    closeBtn.innerHTML = `<i class="fa-solid fa-xmark"></i>`;
+    closeBtn.style.border = "1px solid #52525b";
+    closeBtn.style.background = "transparent";
+    closeBtn.style.color = "#fff";
+    closeBtn.style.cursor = "pointer";
+    closeBtn.style.fontSize = "12px";
+    closeBtn.style.width = "28px";
+    closeBtn.style.height = "28px";
+    closeBtn.style.padding = "0";
+    closeBtn.style.borderRadius = "6px";
+    closeBtn.style.display = "inline-flex";
+    closeBtn.style.alignItems = "center";
+    closeBtn.style.justifyContent = "center";
+    closeBtn.style.flexShrink = "0";
+    closeBtn.style.lineHeight = "1";
+    closeBtn.style.boxSizing = "border-box";
+    closeBtn.title = "Close";
+    closeBtn.setAttribute("data-i18n-title", "doi.close");
+    titleBar.appendChild(closeBtn);
+
+
+    // 创建内容容器（提前声明和初始化）
+    const contentContainer = document.createElement("div");
+    contentContainer.className = "doi-batch-content";
+    contentContainer.style.display = "flex";
+    contentContainer.style.flexDirection = "column";
+    contentContainer.style.gap = "10px";
+    contentContainer.style.flex = "1";
+    contentContainer.style.minHeight = "0";
+    contentContainer.style.overflowY = "auto";
+    contentContainer.style.alignItems = "stretch";
+    contentContainer.style.boxSizing = "border-box";
+    contentContainer.style.padding = "14px";
+    contentContainer.style.paddingTop = "12px";
+    box.appendChild(contentContainer);
+    if (isDoiSidePanelSurface) {
+        contentContainer.style.padding = "0";
+        contentContainer.style.gap = "7px";
+        contentContainer.style.overflow = "visible";
+    }
+
+    const applyInputBaseStyle = (el) => {
+        el.style.boxSizing = "border-box";
+        el.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+        el.style.color = "#18181b";
+        el.style.background = "#ffffff";
+        el.style.border = "1px solid #d4d4d8";
+        el.style.borderRadius = "6px";
+        el.style.outline = "none";
+        el.style.transition = "border-color 120ms ease, box-shadow 120ms ease";
+        el.addEventListener("focus", () => {
+            el.style.borderColor = "#52525b";
+            el.style.boxShadow = "0 0 0 2px rgba(39, 39, 42, 0.12)";
+        });
+        el.addEventListener("blur", () => {
+            el.style.borderColor = "#d4d4d8";
+            el.style.boxShadow = "none";
+        });
+    };
+
+    const applyButtonStyle = (el, primary = false) => {
+        el.style.border = primary ? "1px solid #18181b" : "1px solid #d4d4d8";
+        el.style.borderRadius = "6px";
+        el.style.background = primary ? "#18181b" : "#fafafa";
+        el.style.color = primary ? "#ffffff" : "#27272a";
+        el.style.fontWeight = "600";
+        el.style.transition = "background 120ms ease, border-color 120ms ease, transform 80ms ease";
+        el.addEventListener("mouseenter", () => {
+            el.style.background = primary ? "#27272a" : "#f4f4f5";
+            el.style.borderColor = primary ? "#27272a" : "#a1a1aa";
+        });
+        el.addEventListener("mouseleave", () => {
+            el.style.background = primary ? "#18181b" : "#fafafa";
+            el.style.borderColor = primary ? "#18181b" : "#d4d4d8";
+            el.style.transform = "translateY(0)";
+        });
+        el.addEventListener("mousedown", () => {
+            el.style.transform = "translateY(1px)";
+        });
+        el.addEventListener("mouseup", () => {
+            el.style.transform = "translateY(0)";
+        });
+    };
+
+    const setIconButtonContent = (button, iconClass, label, i18nKey = "") => {
+        const icon = document.createElement("i");
+        icon.className = `fa-solid ${iconClass}`;
+        icon.setAttribute("aria-hidden", "true");
+        icon.style.flexShrink = "0";
+        icon.style.width = "14px";
+        icon.style.textAlign = "center";
+
+        const text = document.createElement("span");
+        text.textContent = label;
+        if (i18nKey) text.setAttribute("data-i18n", i18nKey);
+        text.style.minWidth = "0";
+        text.style.overflow = "hidden";
+        text.style.textOverflow = "ellipsis";
+        text.style.whiteSpace = "nowrap";
+
+        button.replaceChildren(icon, text);
+        button.style.display = "inline-flex";
+        button.style.alignItems = "center";
+        button.style.justifyContent = "center";
+        button.style.gap = "6px";
+        button.style.whiteSpace = "nowrap";
+        button.setAttribute("aria-label", label);
+        button.title = label;
+        if (i18nKey) {
+            button.setAttribute("data-i18n-title", i18nKey);
+            button.setAttribute("data-i18n-aria-label", i18nKey);
+        }
+    };
+
+    const licenseNotice = document.createElement("div");
+    licenseNotice.className = "doi-license-notice";
+    licenseNotice.innerHTML = [
+        '<i class="fa-solid fa-circle-info" aria-hidden="true"></i>',
+        '<span data-i18n="doi.licenseNotice">Use only within your institution subscription and the publisher license terms.</span>'
+    ].join("");
+    contentContainer.appendChild(licenseNotice);
+
+    // ---- SO_temp 下拉菜单 ----
+    const templateSelect = document.createElement("select");
+    applyInputBaseStyle(templateSelect);
+    templateSelect.style.width = "100%";
+    templateSelect.style.height = "38px";
+    templateSelect.style.fontSize = "12px";
+    templateSelect.style.padding = "0 10px";
+    templateSelect.style.cursor = "pointer";
+
+    // 添加"Custom"选项
+    const customOpt = document.createElement("option");
+    customOpt.value = "custom";
+    customOpt.textContent = "Custom";
+    customOpt.setAttribute("data-i18n", "doi.custom");
+    templateSelect.appendChild(customOpt);
+
+    // 添加 SO_temp 中的选项
+    for (const [key, value] of Object.entries(SO_temp)) {
+        const opt = document.createElement("option");
+        opt.value = key;
+        opt.dataset.template = value;
+        opt.textContent = key;
+        templateSelect.appendChild(opt);
+    }
+    contentContainer.appendChild(templateSelect);
+
+    // ---- URL 模板输入框 ----
+    const label1 = document.createElement("div");
+    label1.style.fontSize = "12px";
+    label1.textContent = "PDF path (use {doi} as placeholder):";
+    label1.setAttribute("data-i18n", "doi.pathLabel");
+    label1.style.width = "100%";
+    label1.style.color = "#52525b";
+    label1.style.fontWeight = "500";
+    contentContainer.appendChild(label1);
+
+    const templateInput = document.createElement("input");
+    templateInput.type = "text";
+    templateInput.value = savedTemplate;
+    applyInputBaseStyle(templateInput);
+    templateInput.style.width = "100%";
+    templateInput.style.height = "38px";
+    templateInput.style.fontSize = "12px";
+    templateInput.style.padding = "0 10px";
+    contentContainer.appendChild(templateInput);
+
+    // 下拉菜单变化事件
+    templateSelect.addEventListener("change", () => {
+        const selectedKey = templateSelect.value;
+        writeStorage(TEMPLATE_SELECTION_KEY, selectedKey);
+        if (selectedKey !== "custom") {
+            const selectedTemplate = SO_temp[selectedKey];
+            templateInput.value = selectedTemplate;
+            writeStorage(TEMPLATE_KEY, selectedTemplate);
+            console.log("Template updated from dropdown:", selectedKey, selectedTemplate);
+        }
+    });
+
+    // 输入框变化事件
+    templateInput.addEventListener("change", () => {
+        writeStorage(TEMPLATE_KEY, templateInput.value);
+        console.log("Saved URL template:", templateInput.value);
+
+        // 检查输入值是否匹配 SO_temp 中的某个模板
+        const currentKey = templateSelect.value;
+        if (currentKey !== "custom" && SO_temp[currentKey] === templateInput.value) {
+            writeStorage(TEMPLATE_SELECTION_KEY, currentKey);
+            return;
+        }
+        const matchingEntry = Object.entries(SO_temp).find(([, value]) => templateInput.value === value);
+        templateSelect.value = matchingEntry?.[0] || "custom";
+        writeStorage(TEMPLATE_SELECTION_KEY, templateSelect.value);
+    });
+
+    // 初始化下拉菜单选中状态
+    const savedSelectionIsValid = savedTemplateSelection !== "custom"
+        && Object.prototype.hasOwnProperty.call(SO_temp, savedTemplateSelection)
+        && SO_temp[savedTemplateSelection] === savedTemplate;
+    const initialMatchingEntry = Object.entries(SO_temp).find(([, value]) => savedTemplate === value);
+    templateSelect.value = savedSelectionIsValid
+        ? savedTemplateSelection
+        : (savedTemplateSelection === "custom" ? "custom" : initialMatchingEntry?.[0] || "custom");
+    writeStorage(TEMPLATE_SELECTION_KEY, templateSelect.value);
+    // ---- 下载延迟 + 并发数 + 批次大小 + 批次间隔 ----
+    const timeRow = document.createElement("div");
+    timeRow.style.display = "grid";
+    timeRow.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+    timeRow.style.gap = "10px";
+    timeRow.style.width = "100%";
+    timeRow.style.alignItems = "end";
+    contentContainer.appendChild(timeRow);
+
+    const timerWrap = document.createElement("div");
+    timerWrap.style.display = "flex";
+    timerWrap.style.flexDirection = "column";
+    timerWrap.style.gap = "5px";
+    timerWrap.style.minWidth = "0";
+    timeRow.appendChild(timerWrap);
+
+    const timerlable = document.createElement("div");
+    timerlable.style.fontSize = "12px";
+    timerlable.textContent = "Download delay (s)";
+    timerlable.setAttribute("data-i18n", "doi.downloadDelay");
+    timerlable.style.color = "#52525b";
+    timerlable.style.fontWeight = "500";
+    timerlable.style.lineHeight = "18px";
+    timerWrap.appendChild(timerlable);
+
+    const timerInput = document.createElement("input");
+    // Use text instead of number so host-page/locale rules do not strip the dot in `0.1`.
+    timerInput.type = "text";
+    timerInput.inputMode = "decimal";
+    timerInput.pattern = "[0-9]+([.][0-9]+)?";
+    timerInput.value = savedDownloadDelaySeconds;
+    applyInputBaseStyle(timerInput);
+    timerInput.style.width = "100%";
+    timerInput.style.height = "38px";
+    timerInput.style.fontSize = "12px";
+    timerInput.style.padding = "0 10px";
+    timerWrap.appendChild(timerInput);
+
+    const updateDownloadDelay = (normalizeInput = false) => {
+        const seconds = timerInput.value.trim() === "" ? NaN : Number(timerInput.value);
+        if (Number.isFinite(seconds) && seconds >= 0) {
+            liveDownloadDelayMs = Math.round(seconds * 1000);
+            writeStorage(DOWNLOAD_DELAY_SECONDS_KEY, String(liveDownloadDelayMs / 1000));
+            if (normalizeInput) timerInput.value = String(liveDownloadDelayMs / 1000);
+            return;
+        }
+        if (normalizeInput) timerInput.value = String(liveDownloadDelayMs / 1000);
+    };
+    timerInput.addEventListener("input", () => updateDownloadDelay(false));
+    timerInput.addEventListener("change", () => updateDownloadDelay(true));
+
+    const concurrencyWrap = document.createElement("div");
+    concurrencyWrap.style.display = "flex";
+    concurrencyWrap.style.flexDirection = "column";
+    concurrencyWrap.style.gap = "5px";
+    concurrencyWrap.style.minWidth = "0";
+    timeRow.appendChild(concurrencyWrap);
+
+    const concurrencyLabel = document.createElement("div");
+    concurrencyLabel.style.fontSize = "12px";
+    concurrencyLabel.textContent = "Concurrent downloads";
+    concurrencyLabel.setAttribute("data-i18n", "doi.concurrent");
+    concurrencyLabel.style.color = "#52525b";
+    concurrencyLabel.style.fontWeight = "500";
+    concurrencyLabel.style.lineHeight = "18px";
+    concurrencyLabel.title = `1 = serial; maximum ${MAX_DOWNLOAD_CONCURRENCY}`;
+    concurrencyWrap.appendChild(concurrencyLabel);
+
+    const concurrencyInput = document.createElement("input");
+    concurrencyInput.type = "number";
+    concurrencyInput.min = "1";
+    concurrencyInput.max = String(MAX_DOWNLOAD_CONCURRENCY);
+    concurrencyInput.step = "1";
+    concurrencyInput.value = savedDownloadConcurrency;
+    concurrencyInput.title = `1 = serial; up to ${MAX_DOWNLOAD_CONCURRENCY} simultaneous downloads`;
+    applyInputBaseStyle(concurrencyInput);
+    concurrencyInput.style.width = "100%";
+    concurrencyInput.style.height = "38px";
+    concurrencyInput.style.fontSize = "12px";
+    concurrencyInput.style.padding = "0 10px";
+    concurrencyWrap.appendChild(concurrencyInput);
+
+    const normalizeDownloadConcurrency = () => {
+        return normalizeConcurrency(concurrencyInput.value, MAX_DOWNLOAD_CONCURRENCY, 1);
+    };
+
+    const updateDownloadConcurrency = (normalizeInput = false) => {
+        if (concurrencyInput.value.trim() === "") {
+            if (normalizeInput) concurrencyInput.value = String(liveDownloadConcurrency);
+            return;
+        }
+        liveDownloadConcurrency = normalizeDownloadConcurrency();
+        writeStorage(DOWNLOAD_CONCURRENCY_KEY, String(liveDownloadConcurrency));
+        activeDownloadRuntime?.setConcurrency?.(liveDownloadConcurrency);
+        if (normalizeInput) concurrencyInput.value = String(liveDownloadConcurrency);
+    };
+    concurrencyInput.addEventListener("input", () => updateDownloadConcurrency(false));
+    concurrencyInput.addEventListener("change", () => updateDownloadConcurrency(true));
+
+    const batchSizeWrap = document.createElement("div");
+    batchSizeWrap.style.display = "flex";
+    batchSizeWrap.style.flexDirection = "column";
+    batchSizeWrap.style.gap = "5px";
+    batchSizeWrap.style.minWidth = "0";
+    timeRow.appendChild(batchSizeWrap);
+
+    const batchSizeLabel = document.createElement("div");
+    batchSizeLabel.style.fontSize = "12px";
+    batchSizeLabel.textContent = "Batch size";
+    batchSizeLabel.setAttribute("data-i18n", "doi.batchSize");
+    batchSizeLabel.style.color = "#52525b";
+    batchSizeLabel.style.fontWeight = "500";
+    batchSizeLabel.style.lineHeight = "18px";
+    batchSizeWrap.appendChild(batchSizeLabel);
+
+    const batchSizeInput = document.createElement("input");
+    batchSizeInput.type = "number";
+    batchSizeInput.min = "1";
+    batchSizeInput.step = "1";
+    batchSizeInput.value = savedBatchSize;
+    applyInputBaseStyle(batchSizeInput);
+    batchSizeInput.style.width = "100%";
+    batchSizeInput.style.height = "38px";
+    batchSizeInput.style.fontSize = "12px";
+    batchSizeInput.style.padding = "0 10px";
+    batchSizeWrap.appendChild(batchSizeInput);
+
+    const updateBatchSize = (normalizeInput = false) => {
+        const batchSize = batchSizeInput.value.trim() === "" ? NaN : Math.floor(Number(batchSizeInput.value));
+        if (Number.isFinite(batchSize) && batchSize >= 1) {
+            liveBatchSize = batchSize;
+            writeStorage(BATCH_SIZE_KEY, String(liveBatchSize));
+            if (normalizeInput) batchSizeInput.value = String(liveBatchSize);
+            return;
+        }
+        if (normalizeInput) batchSizeInput.value = String(liveBatchSize);
+    };
+    batchSizeInput.addEventListener("input", () => updateBatchSize(false));
+    batchSizeInput.addEventListener("change", () => updateBatchSize(true));
+
+    const batchWrap = document.createElement("div");
+    batchWrap.style.display = "flex";
+    batchWrap.style.flexDirection = "column";
+    batchWrap.style.gap = "5px";
+    batchWrap.style.minWidth = "0";
+    timeRow.appendChild(batchWrap);
+
+    const batchLabel = document.createElement("div");
+    batchLabel.style.fontSize = "12px";
+    batchLabel.textContent = "Batch interval (s)";
+    batchLabel.setAttribute("data-i18n", "doi.batchInterval");
+    batchLabel.style.color = "#52525b";
+    batchLabel.style.fontWeight = "500";
+    batchLabel.style.lineHeight = "18px";
+    batchWrap.appendChild(batchLabel);
+
+    const batchInput = document.createElement("input");
+    batchInput.type = "text";
+    batchInput.inputMode = "decimal";
+    batchInput.pattern = "[0-9]+([.][0-9]+)?";
+    batchInput.value = savedBatchIntervalSeconds;
+    applyInputBaseStyle(batchInput);
+    batchInput.style.width = "100%";
+    batchInput.style.height = "38px";
+    batchInput.style.fontSize = "12px";
+    batchInput.style.padding = "0 10px";
+    batchWrap.appendChild(batchInput);
+
+    const updateBatchInterval = (normalizeInput = false) => {
+        const seconds = batchInput.value.trim() === "" ? NaN : Number(batchInput.value);
+        if (Number.isFinite(seconds) && seconds >= 0) {
+            liveBatchIntervalMs = Math.round(seconds * 1000);
+            writeStorage(BATCH_INTERVAL_SECONDS_KEY, String(liveBatchIntervalMs / 1000));
+            if (normalizeInput) batchInput.value = String(liveBatchIntervalMs / 1000);
+            return;
+        }
+        if (normalizeInput) batchInput.value = String(liveBatchIntervalMs / 1000);
+    };
+    batchInput.addEventListener("input", () => updateBatchInterval(false));
+    batchInput.addEventListener("change", () => updateBatchInterval(true));
+
+
+    // ---- DOI 输入与操作一体化容器 ----
+    const doiComposer = document.createElement("div");
+    doiComposer.className = "doi-composer doi-download-composer";
+    contentContainer.appendChild(doiComposer);
+
+    const doiComposerInput = document.createElement("div");
+    doiComposerInput.className = "doi-composer-input";
+    doiComposer.appendChild(doiComposerInput);
+
+    const label2 = document.createElement("div");
+    label2.className = "doi-download-count inline-metrics";
+    label2.style.fontSize = "12px";
+    label2.textContent = "DOI list: 0";
+    label2.setAttribute("data-i18n", "doi.listLabel");
+    label2.style.width = "100%";
+    label2.style.color = "#52525b";
+    label2.style.fontWeight = "500";
+
+    const textarea = document.createElement("textarea");
+    applyInputBaseStyle(textarea);
+    textarea.classList.add("doi-file-drop-target");
+    textarea.style.width = "100%";
+    textarea.style.minHeight = "150px";
+    textarea.style.padding = "10px 11px";
+    textarea.style.fontSize = "12px";
+    textarea.style.lineHeight = "1.5";
+    textarea.style.resize = "vertical"; // 只允许垂直调整大小，禁止水平调整
+    textarea.style.overflowX = "hidden";
+    textarea.placeholder = "Paste DOI text here, or drop files onto this input...";
+    textarea.setAttribute("data-i18n-placeholder", "doi.textareaPlaceholder");
+    doiComposerInput.appendChild(textarea);
+
+    const dropPrompt = document.createElement("div");
+    dropPrompt.className = "doi-drop-prompt";
+    dropPrompt.hidden = !isDoiSidePanelSurface;
+    dropPrompt.setAttribute("aria-hidden", "true");
+    dropPrompt.innerHTML = [
+        '<i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>',
+        '<strong data-i18n="doi.dropPrompt">Release to import DOI files</strong>',
+        '<span data-i18n="doi.dropFormats">TXT, CSV, RIS, BibTeX, JSON, and XML files</span>'
+    ].join("");
+    doiComposerInput.appendChild(dropPrompt);
+
+    const doiComposerFooter = document.createElement("div");
+    doiComposerFooter.className = "doi-composer-footer doi-download-footer";
+    doiComposer.appendChild(doiComposerFooter);
+    doiComposerFooter.appendChild(label2);
+
+    // ---- 下载目录选择按钮 ----
+    const selectDownloadDirBtn = document.createElement("button");
+    selectDownloadDirBtn.style.height = "38px";
+    selectDownloadDirBtn.style.width = "100%";
+    selectDownloadDirBtn.style.border = "1px solid #d4d4d8";
+    selectDownloadDirBtn.style.borderRadius = "8px";
+    selectDownloadDirBtn.style.cursor = "pointer";
+    selectDownloadDirBtn.style.background = "#f7f9fb";
+    selectDownloadDirBtn.style.color = "#27272a";
+    selectDownloadDirBtn.style.fontWeight = "600";
+    selectDownloadDirBtn.style.fontSize = "12px";
+    selectDownloadDirBtn.style.boxSizing = "border-box";
+    selectDownloadDirBtn.style.lineHeight = "1";
+    selectDownloadDirBtn.style.padding = "0 10px";
+    selectDownloadDirBtn.style.textAlign = "center";
+    selectDownloadDirBtn.style.display = "inline-flex";
+    selectDownloadDirBtn.style.alignItems = "center";
+    selectDownloadDirBtn.style.justifyContent = "center";
+    selectDownloadDirBtn.style.fontFamily = "inherit";
+    selectDownloadDirBtn.style.overflow = "hidden";
+    selectDownloadDirBtn.style.textOverflow = "ellipsis";
+    selectDownloadDirBtn.style.whiteSpace = "nowrap";
+    applyButtonStyle(selectDownloadDirBtn);
+    doiComposerFooter.appendChild(selectDownloadDirBtn);
+
+    const updateDownloadDirButton = () => {
+        const label = downloadDirName
+            ? doiMessage("doi.folder", { name: downloadDirName })
+            : doiMessage("doi.chooseFolder");
+        setIconButtonContent(selectDownloadDirBtn, "fa-folder-open", label, downloadDirName ? "" : "doi.chooseFolder");
+    };
+    updateDownloadDirButton();
+
+    // ---- 工具按钮行 ----
+    const toolsRow = document.createElement("div");
+    toolsRow.className = "doi-tools-row";
+    toolsRow.style.display = "flex";
+    toolsRow.style.gap = "10px";
+    toolsRow.style.width = "100%";
+    toolsRow.style.alignItems = "stretch";
+    toolsRow.style.boxSizing = "border-box";
+    doiComposerFooter.appendChild(toolsRow);
+
+    const localFilePicker = document.createElement("div");
+    localFilePicker.style.position = "relative";
+    localFilePicker.style.height = "38px";
+    localFilePicker.style.flex = "1";
+    localFilePicker.style.minWidth = "0";
+    toolsRow.appendChild(localFilePicker);
+
+    const readLocalFilesBtn = document.createElement("button");
+    readLocalFilesBtn.type = "button";
+    setIconButtonContent(readLocalFilesBtn, "fa-file-arrow-up", "Load DOI File", "doi.loadFile");
+    readLocalFilesBtn.style.height = "38px";
+    readLocalFilesBtn.style.width = "100%";
+    readLocalFilesBtn.style.cursor = "pointer";
+    readLocalFilesBtn.style.fontSize = "12px";
+    readLocalFilesBtn.style.padding = "0 10px";
+    readLocalFilesBtn.style.whiteSpace = "nowrap";
+    readLocalFilesBtn.style.pointerEvents = "none";
+    applyButtonStyle(readLocalFilesBtn);
+    localFilePicker.appendChild(readLocalFilesBtn);
+
+    // 让第一次真实点击直接落到原生 file input，避免页面脚本拦截间接的 input.click()。
+    const localFileInput = document.createElement("input");
+    localFileInput.type = "file";
+    localFileInput.multiple = true;
+    localFileInput.accept = ".txt,.md,.csv,.ris,.bib,.bibtex,.json,.xml,.enw,.nbib,text/*,application/json,application/xml";
+    localFileInput.title = "Read local files and extract DOI";
+    localFileInput.setAttribute("aria-label", "Read local files and extract DOI");
+    localFileInput.setAttribute("data-i18n-title", "doi.readFiles");
+    localFileInput.setAttribute("data-i18n-aria-label", "doi.readFiles");
+    localFileInput.style.position = "absolute";
+    localFileInput.style.inset = "0";
+    localFileInput.style.width = "100%";
+    localFileInput.style.height = "100%";
+    localFileInput.style.opacity = "0";
+    localFileInput.style.cursor = "pointer";
+    localFileInput.style.zIndex = "1";
+    localFilePicker.appendChild(localFileInput);
+
+    // ---- 同步本地已下载 PDF 的 DOI ----
+    const syncBtn = document.createElement("button");
+    setIconButtonContent(syncBtn, "fa-rotate", "Sync PDFs", "doi.sync");
+    syncBtn.style.height = "38px";
+    syncBtn.style.flex = "1";
+    syncBtn.style.border = "1px solid #d4d4d8";
+    syncBtn.style.borderRadius = "8px";
+    syncBtn.style.cursor = "pointer";
+    syncBtn.style.background = "#f7f9fb";
+    syncBtn.style.color = "#27272a";
+    syncBtn.style.fontWeight = "600";
+    syncBtn.style.fontSize = "12px";
+    syncBtn.style.boxSizing = "border-box";
+    syncBtn.style.lineHeight = "1";
+    syncBtn.style.padding = "0 10px";
+    syncBtn.style.textAlign = "center";
+    syncBtn.style.display = "inline-flex";
+    syncBtn.style.alignItems = "center";
+    syncBtn.style.justifyContent = "center";
+    syncBtn.style.fontFamily = "inherit";
+    syncBtn.style.whiteSpace = "nowrap";
+    syncBtn.style.minWidth = "0";
+    applyButtonStyle(syncBtn);
+    toolsRow.appendChild(syncBtn);
+
+    // ---- 从文本提取 DOI ----
+    const extractBtn = document.createElement("button");
+    setIconButtonContent(extractBtn, "fa-wand-magic-sparkles", "Extract DOIs", "doi.extract");
+    extractBtn.style.height = "38px";
+    extractBtn.style.flex = "1";
+    extractBtn.style.border = "1px solid #d4d4d8";
+    extractBtn.style.borderRadius = "8px";
+    extractBtn.style.cursor = "pointer";
+    extractBtn.style.background = "#f7f9fb";
+    extractBtn.style.color = "#27272a";
+    extractBtn.style.fontWeight = "600";
+    extractBtn.style.fontSize = "12px";
+    extractBtn.style.boxSizing = "border-box";
+    extractBtn.style.lineHeight = "1";
+    extractBtn.style.padding = "0 10px";
+    extractBtn.style.textAlign = "center";
+    extractBtn.style.display = "inline-flex";
+    extractBtn.style.alignItems = "center";
+    extractBtn.style.justifyContent = "center";
+    extractBtn.style.fontFamily = "inherit";
+    extractBtn.style.whiteSpace = "nowrap";
+    extractBtn.style.minWidth = "0";
+    applyButtonStyle(extractBtn);
+    toolsRow.appendChild(extractBtn);
+
+
+    // ---- 下载 / 停止按钮 ----
+    const downloadActions = document.createElement("div");
+    downloadActions.className = "doi-download-actions";
+    downloadActions.style.display = "flex";
+    downloadActions.style.gap = "10px";
+    downloadActions.style.width = "100%";
+    doiComposerFooter.appendChild(downloadActions);
+
+    const btn = document.createElement("button");
+    btn.className = "doi-download-primary";
+    setIconButtonContent(btn, "fa-download", "Download", "doi.download");
+    btn.style.height = "40px";
+    btn.style.flex = "1";
+    btn.style.border = "1px solid #18181b";
+    btn.style.borderRadius = "6px";
+    btn.style.cursor = "pointer";
+    btn.style.background = "#18181b";
+    btn.style.color = "#fff";
+    btn.style.fontWeight = "600";
+    btn.style.fontSize = "12px";
+    btn.style.boxSizing = "border-box";
+    btn.style.lineHeight = "1";
+    btn.style.padding = "0 10px";
+    btn.style.textAlign = "center";
+    btn.style.display = "inline-flex";
+    btn.style.alignItems = "center";
+    btn.style.justifyContent = "center";
+    btn.style.fontFamily = "inherit";
+    applyButtonStyle(btn, true);
+    downloadActions.appendChild(btn);
+
+    const stopBtn = document.createElement("button");
+    stopBtn.className = "doi-download-stop";
+    setIconButtonContent(stopBtn, "fa-stop", "Stop", "doi.stop");
+    stopBtn.type = "button";
+    stopBtn.disabled = true;
+    stopBtn.style.height = "40px";
+    stopBtn.style.width = "104px";
+    stopBtn.style.flexShrink = "0";
+    stopBtn.style.border = "1px solid #dc2626";
+    stopBtn.style.borderRadius = "6px";
+    stopBtn.style.background = "#dc2626";
+    stopBtn.style.color = "#fff";
+    stopBtn.style.fontWeight = "600";
+    stopBtn.style.fontSize = "12px";
+    stopBtn.style.padding = "0 10px";
+    stopBtn.style.cursor = "not-allowed";
+    stopBtn.style.opacity = "0.45";
+    stopBtn.style.fontFamily = "inherit";
+    downloadActions.appendChild(stopBtn);
+
+    // ---- 批次倒计时显示 ----
+    const cooldownDiv = document.createElement("div");
+    cooldownDiv.style.minHeight = "16px";
+    cooldownDiv.style.fontSize = "12px";
+    cooldownDiv.style.color = "#52525b";
+    cooldownDiv.style.width = "100%";
+    doiComposerFooter.appendChild(cooldownDiv);
+
+    // ---- 显示日志 ----
+    const logDiv = document.createElement("div");
+    logDiv.className = "doi-batch-log";
+    logDiv.style.maxHeight = "150px";
+    logDiv.style.overflowY = "auto";
+    logDiv.style.fontSize = "12px";
+    logDiv.style.borderTop = "1px solid #e4e4e7";
+    logDiv.style.paddingTop = "6px";
+    logDiv.style.width = "100%";
+    logDiv.style.boxSizing = "border-box";
+    doiComposerFooter.appendChild(logDiv);
+
+    function log(msg) {
+        console.log(msg);
+        const div = document.createElement("div");
+        div.textContent = msg;
+        div.style.color = "#3f3f46";
+        logDiv.innerHTML = div.outerHTML;
+        logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function parseDoiList(value) {
+        return (value || "")
+            .trim()
+            .split(/\r?\n/)
+            .map(x => x.trim())
+            .filter(Boolean);
+    }
+
+    const updateDoiCount = () => {
+        label2.textContent = doiMessage("doi.listLabel", { count: parseDoiList(textarea.value).length });
+    };
+    textarea.addEventListener("input", updateDoiCount);
+    updateDoiCount();
+
+    const refreshDoiTranslations = () => {
+        applyTranslations(currentLanguage, box);
+        updateDoiCount();
+        updateDownloadDirButton();
+    };
+    refreshDoiTranslations();
+
+    if (isDoiSidePanelSurface && globalThis.chrome?.storage?.local) {
+        globalThis.chrome.storage.local.get([LANG_STORAGE_KEY], result => {
+            currentLanguage = result[LANG_STORAGE_KEY] === "en" ? "en" : "zh";
+            refreshDoiTranslations();
+        });
+        globalThis.chrome.storage.onChanged.addListener((changes, areaName) => {
+            if (areaName !== "local" || !changes[LANG_STORAGE_KEY]) return;
+            currentLanguage = changes[LANG_STORAGE_KEY].newValue === "en" ? "en" : "zh";
+            refreshDoiTranslations();
+        });
+    }
+    document.addEventListener("wos-aide:language-changed", event => {
+        currentLanguage = event.detail?.language === "en" ? "en" : "zh";
+        refreshDoiTranslations();
+    });
+
+    if (isDoiSidePanelSurface && globalThis.chrome?.storage?.local) {
+        globalThis.chrome.storage.local.get(["wosAideDoiList"], result => {
+            const list = Array.isArray(result.wosAideDoiList) ? result.wosAideDoiList : [];
+            if (list.length && !textarea.value.trim()) {
+                textarea.value = list.join("\n");
+                updateDoiCount();
+            }
+        });
+        globalThis.chrome.storage.onChanged.addListener((changes, areaName) => {
+            if (areaName !== "local" || !changes.wosAideDoiList) return;
+            const list = Array.isArray(changes.wosAideDoiList.newValue) ? changes.wosAideDoiList.newValue : [];
+            if (list.length || !textarea.value.trim()) {
+                textarea.value = list.join("\n");
+                updateDoiCount();
+            }
+        });
+    }
+
+    // 提取函数：从文本中提取 DOI（按出现顺序）
+    function extractFromText(text) {
+        const dois = [];
+        const seenDois = new Set();
+        let remainingText = text || "";
+        let match;
+
+        const doiRegex = /\b(?:https?:\/\/(?:dx\.)?doi\.org\/|doi:\s*|urn:doi:\s*|urn:\s*doi:\s*)?(10\.\d{4,9}\/[^\s"'<>()\[\],;]+)/gi;
+        while ((match = doiRegex.exec(remainingText)) !== null) {
+            let doi = match[1] || match[0];
+            doi = doi.replace(/[\.,;:\)\]\}]+$/g, "");
+            try {
+                doi = decodeURIComponent(doi);
+            } catch (e) { /* ignore decode errors */ }
+            doi = doi.trim().toLowerCase();
+            if (doi && !seenDois.has(doi)) {
+                seenDois.add(doi);
+                dois.push(doi);
+            }
+        }
+
+        return dois;
+    }
+
+    async function extractDoisFromFiles(files, source = "selected") {
+        const fileList = Array.from(files || []);
+        if (fileList.length === 0) return;
+
+        const contents = [];
+        let failedCount = 0;
+        for (const file of fileList) {
+            try {
+                contents.push(await file.text());
+            } catch (error) {
+                failedCount += 1;
+                console.warn(`[DOI PDF Download] Failed to read ${file.name}:`, error);
+            }
+        }
+
+        // 复用已有正则提取实现，不在文件拖放流程中重复定义 DOI 规则。
+        const dois = extractFromText(contents.join("\n"));
+        if (dois.length === 0) {
+            log(`No DOI found in ${fileList.length} ${source} file${fileList.length === 1 ? "" : "s"}`);
+            return;
+        }
+
+        textarea.value = dois.join("\n");
+        updateDoiCount();
+        const failedSuffix = failedCount > 0 ? `; ${failedCount} file(s) could not be read` : "";
+        log(`Extracted ${dois.length} DOIs from ${fileList.length - failedCount} ${source} file(s)${failedSuffix}`);
+    }
+
+    const dragContainsFiles = (event) => Boolean(
+        event.dataTransfer?.files?.length
+        || Array.from(event.dataTransfer?.types || []).includes("Files")
+    );
+    let fileDragDepth = 0;
+    const defaultDropBackground = textarea.style.background;
+    const defaultDropBorderColor = textarea.style.borderColor;
+    const defaultDropBorderStyle = textarea.style.borderStyle;
+    const defaultDropBoxShadow = textarea.style.boxShadow;
+    textarea.style.transition = "background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease";
+    const setTextareaDropActive = (active) => {
+        textarea.classList.toggle("is-file-dragover", active);
+        textarea.style.background = active ? "rgba(82, 82, 91, 0.09)" : defaultDropBackground;
+        textarea.style.borderColor = active ? "#737373" : defaultDropBorderColor;
+        textarea.style.borderStyle = active ? "dashed" : defaultDropBorderStyle;
+        textarea.style.boxShadow = active
+            ? "inset 0 0 0 1px rgba(82, 82, 91, 0.16), 0 0 0 2px rgba(82, 82, 91, 0.06)"
+            : defaultDropBoxShadow;
+    };
+
+    textarea.addEventListener("dragenter", (event) => {
+        if (!dragContainsFiles(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        fileDragDepth += 1;
+        setTextareaDropActive(true);
+    });
+
+    textarea.addEventListener("dragover", (event) => {
+        if (!dragContainsFiles(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = "copy";
+    });
+
+    textarea.addEventListener("dragleave", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        fileDragDepth = Math.max(0, fileDragDepth - 1);
+        if (fileDragDepth === 0) setTextareaDropActive(false);
+    });
+
+    textarea.addEventListener("drop", (event) => {
+        if (!dragContainsFiles(event)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        fileDragDepth = 0;
+        setTextareaDropActive(false);
+        void extractDoisFromFiles(event.dataTransfer.files, "dropped");
+    });
+
+    // Prevent the browser from navigating to a dropped file outside the DOI input.
+    box.addEventListener("dragover", (event) => {
+        if (dragContainsFiles(event)) event.preventDefault();
+    });
+    box.addEventListener("drop", (event) => {
+        if (dragContainsFiles(event)) event.preventDefault();
+    });
+
+    let downloadedDois = [];
+    let activeDownloadController = null;
+    let pdfIndexUpdateQueue = Promise.resolve();
+
+    const setDownloadRunning = (running) => {
+        btn.disabled = running;
+        btn.style.cursor = running ? "not-allowed" : "pointer";
+        btn.style.opacity = running ? "0.6" : "1";
+        stopBtn.disabled = !running;
+        stopBtn.style.cursor = running ? "pointer" : "not-allowed";
+        stopBtn.style.opacity = running ? "1" : "0.45";
+        syncBtn.disabled = running;
+        syncBtn.style.cursor = running ? "not-allowed" : "pointer";
+        syncBtn.style.opacity = running ? "0.6" : "1";
+        selectDownloadDirBtn.disabled = running;
+        selectDownloadDirBtn.style.cursor = running ? "not-allowed" : "pointer";
+        selectDownloadDirBtn.style.opacity = running ? "0.6" : "1";
+    };
+
+    const waitForDelay = (ms, signal) => new Promise((resolve, reject) => {
+        if (signal.aborted) {
+            reject(new DOMException("Download stopped", "AbortError"));
+            return;
+        }
+        const timeoutId = setTimeout(() => {
+            signal.removeEventListener("abort", handleAbort);
+            resolve();
+        }, ms);
+        const handleAbort = () => {
+            clearTimeout(timeoutId);
+            reject(new DOMException("Download stopped", "AbortError"));
+        };
+        signal.addEventListener("abort", handleAbort, { once: true });
+    });
+
+    const sha256Hex = async (blob) => {
+        const buffer = await blob.arrayBuffer();
+        const digest = await crypto.subtle.digest("SHA-256", buffer);
+        return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+    };
+
+    const validatePdfBlob = async (blob, contentType = "") => {
+        const checkedAt = new Date().toISOString();
+        const invalid = (reason) => ({ status: "invalid", checkedAt, method: "pdf-signature-eof", reason });
+        const normalizedType = String(contentType).toLowerCase();
+
+        if (normalizedType.includes("text/html") || normalizedType.includes("application/json")) {
+            return invalid(`Unexpected response type: ${contentType}`);
+        }
+        if (blob.size < 512) {
+            return invalid(`File is too small (${blob.size} bytes)`);
+        }
+
+        const decoder = new TextDecoder("latin1");
+        const head = decoder.decode(await blob.slice(0, Math.min(blob.size, 1024)).arrayBuffer());
+        if (!head.includes("%PDF-")) {
+            const trimmedHead = head.trimStart().slice(0, 32).toLowerCase();
+            const detail = trimmedHead.startsWith("<!doctype") || trimmedHead.startsWith("<html")
+                ? "HTML page received instead of PDF"
+                : "Missing PDF header";
+            return invalid(detail);
+        }
+
+        const tailStart = Math.max(0, blob.size - 65536);
+        const tail = decoder.decode(await blob.slice(tailStart).arrayBuffer());
+        if (!tail.includes("%%EOF")) {
+            return invalid("Missing PDF end marker; file may be incomplete");
+        }
+
+        return { status: "valid", checkedAt, method: "pdf-signature-eof", reason: null };
+    };
+
+    const readPdfIndex = async (dirHandle) => {
+        try {
+            const handle = await dirHandle.getFileHandle(PDF_INDEX_FILE_NAME);
+            const file = await handle.getFile();
+            const parsed = JSON.parse(await file.text());
+            return parsed && Array.isArray(parsed.records) ? parsed : { version: 1, records: [] };
+        } catch (error) {
+            if (error?.name !== "NotFoundError") {
+                console.warn("[DOI PDF Download] Could not read PDF index:", error);
+            }
+            return { version: 1, records: [] };
+        }
+    };
+
+    const writePdfIndex = async (dirHandle, records) => {
+        const deduplicated = deduplicatePdfRecordsBySha(
+            records,
+            record => pdfFileNameForDoi(record?.doi) === record?.filename
+        );
+        const handle = await dirHandle.getFileHandle(PDF_INDEX_FILE_NAME, { create: true });
+        const writable = await handle.createWritable();
+        await writable.write(JSON.stringify({
+            version: 1,
+            updatedAt: new Date().toISOString(),
+            algorithm: "SHA-256",
+            records: deduplicated.records.slice().sort((a, b) => a.filename.localeCompare(b.filename))
+        }, null, 2));
+        await writable.close();
+        return deduplicated;
+    };
+
+    const withDirectoryLock = async (dirHandle, scope, task) => {
+        const lockName = directoryLockName(dirHandle?.name, scope);
+        return runWithWebLock(globalThis.navigator?.locks, lockName, task, error => {
+            console.warn("[DOI PDF Download] Web Lock unavailable; continuing safely:", error);
+        });
+    };
+
+    const synchronizePdfIndex = async (dirHandle) => withDirectoryLock(dirHandle, "index", async () => {
+        const index = await readPdfIndex(dirHandle);
+        const previousByFileName = new Map(index.records.map(record => [record.filename, record]));
+        const records = [];
+        const invalidFiles = [];
+        const synchronizedAt = new Date().toISOString();
+
+        for await (const entry of dirHandle.values()) {
+            if (entry.kind !== "file" || !entry.name.toLowerCase().endsWith(".pdf")) continue;
+            const file = await entry.getFile();
+            const previous = previousByFileName.get(entry.name);
+            const unchanged = previous
+                && previous.size === file.size
+                && previous.lastModified === file.lastModified
+                && previous.sha256;
+            const canReuseValidation = unchanged && previous.validation?.status === "valid";
+            const validation = canReuseValidation ? previous.validation : await validatePdfBlob(file, file.type);
+            if (validation.status !== "valid") {
+                invalidFiles.push({ filename: entry.name, reason: validation.reason });
+                continue;
+            }
+            const doi = previous?.doi || doiFromPdfFileName(entry.name);
+            const provenance = buildSynchronizedPdfProvenance({
+                previous,
+                doi,
+                lastModified: file.lastModified,
+                synchronizedAt
+            });
+            records.push({
+                doi,
+                filename: entry.name,
+                size: file.size,
+                lastModified: file.lastModified,
+                sha256: unchanged ? previous.sha256 : await sha256Hex(file),
+                downloadedAt: provenance.downloadedAt,
+                sourceUrl: provenance.sourceUrl,
+                validation
+            });
+        }
+
+        const deduplicated = await writePdfIndex(dirHandle, records);
+        return { records: deduplicated.records, invalidFiles, duplicateFiles: deduplicated.duplicates };
+    });
+
+    const recordDownloadedPdf = async (dirHandle, fileName, doi, sourceUrl, blob, validation) => {
+        const sha256 = await sha256Hex(blob);
+        const updateIndex = () => withDirectoryLock(dirHandle, "index", async () => {
+            const index = await readPdfIndex(dirHandle);
+            const fileHandle = await dirHandle.getFileHandle(fileName);
+            const file = await fileHandle.getFile();
+            const record = {
+                doi,
+                filename: fileName,
+                size: file.size,
+                lastModified: file.lastModified,
+                sha256,
+                downloadedAt: new Date().toISOString(),
+                sourceUrl,
+                validation
+            };
+            const records = index.records.filter(item => item.filename !== fileName);
+            records.push(record);
+            await writePdfIndex(dirHandle, records);
+        });
+
+        // Concurrent downloads may finish together. Serialize the index read-modify-write
+        // section so that a later completion cannot overwrite an earlier record.
+        const queuedUpdate = pdfIndexUpdateQueue.then(updateIndex, updateIndex);
+        pdfIndexUpdateQueue = queuedUpdate.catch(() => {});
+        await queuedUpdate;
+    };
+
+    function formatCountdown(ms) {
+        if (ms < 60000) {
+            const seconds = ms / 1000;
+            return `${Number.isInteger(seconds) ? seconds : seconds.toFixed(1)}s`;
+        }
+        const minutes = Math.floor(ms / 60000);
+        const seconds = Math.floor((ms % 60000) / 1000);
+        const pad = (num) => num.toString().padStart(2, "0");
+        return `${pad(minutes)}:${pad(seconds)}`;
+    }
+
+    const waitForLiveDelay = async (getTotalMs, signal, tickMs = 100) => {
+        const startedAt = Date.now();
+        while (true) {
+            const totalMs = Math.max(0, Number(getTotalMs()) || 0);
+            const remaining = totalMs - (Date.now() - startedAt);
+            if (remaining <= 0) return;
+            await waitForDelay(Math.min(tickMs, remaining), signal);
+        }
+    };
+
+    async function runBatchCooldown(signal) {
+        const startedAt = Date.now();
+        const update = () => {
+            const remaining = Math.max(0, liveBatchIntervalMs - (Date.now() - startedAt));
+            cooldownDiv.textContent = remaining > 0
+                ? `Next batch starts in ${formatCountdown(remaining)}`
+                : "";
+            return remaining;
+        };
+        let remaining = update();
+        while (remaining > 0) {
+            const tick = Math.min(250, remaining);
+            await waitForDelay(tick, signal);
+            remaining = update();
+        }
+    }
+
+    // ==============================
+    //  读取本地 PDF 文件名并计算未下载 DOI
+    // ==============================
+    async function syncFromFolder() {
+        try {
+            let dirHandle = downloadDirHandle;
+            if (!dirHandle) {
+                dirHandle = await loadStoredProjectHandle();
+                if (dirHandle) {
+                    downloadDirHandle = dirHandle;
+                    downloadDirName = dirHandle.name || '';
+                    updateDownloadDirButton();
+                    window.wosAideDirectoryHandle = dirHandle;
+                }
+            }
+            if (dirHandle) {
+                const granted = await ensureDirectoryPermission(dirHandle);
+                if (!granted) {
+                    dirHandle = null;
+                }
+            }
+            if (!dirHandle) {
+                try {
+                    dirHandle = await chooseDownloadDirectory();
+                } catch (error) {
+                    if (error && (error.name === 'AbortError' || error.message === 'The user aborted a request.')) {
+                        return;
+                    }
+                    log('Folder selection failed: ' + (error && error.message ? error.message : error));
+                    return;
+                }
+            }
+            const { records, invalidFiles, duplicateFiles } = await synchronizePdfIndex(dirHandle);
+            invalidFiles.forEach(({ filename, reason }) => {
+                log(`Invalid PDF excluded: ${filename} (${reason})`);
+            });
+            if (duplicateFiles.length > 0) {
+                console.info(`[DOI PDF Download] Removed ${duplicateFiles.length} duplicate SHA-256 record(s) from the index.`);
+            }
+            const dois = records.map(record => record.doi).filter(Boolean);
+            downloadedDois = Array.from(new Set(dois));
+            if (downloadedDois.length === 0) {
+                updateDoiCount();
+                log("No valid PDF files found in the selected folder");
+                return;
+            }
+            const inputDois = parseDoiList(textarea.value);
+            const downloadedSet = new Set(downloadedDois.map(doi => doi.toLowerCase()));
+            const remaining = inputDois.filter(doi => !downloadedSet.has(doi.toLowerCase()));
+            textarea.value = remaining.join("\n");
+            updateDoiCount();
+            log(`Loaded ${downloadedDois.length} downloaded DOIs, remaining ${remaining.length} in the list`);
+        } catch (err) {
+            if (err && (err.name === 'AbortError' || err.message === 'The user aborted a request.')) {
+                return;
+            }
+            log("Folder not selected or could not be read");
+            console.error(err);
+        }
+    }
+
+    // ==============================
+    //  从文本中提取 DOI 并按出现顺序列出
+    // ==============================
+    function extractDois() {
+        const text = textarea.value || "";
+        const dois = extractFromText(text);
+        if (dois.length === 0) {
+            log("No DOI found in the text");
+            return;
+        }
+        textarea.value = dois.join("\n");
+        updateDoiCount();
+        log(`Extracted ${dois.length} DOIs and updated the list`);
+    }
+
+    // ==============================
+    //  下载函数
+    // ==============================
+    async function getWritableDirectoryHandle() {
+        let dirHandle = downloadDirHandle;
+        if (!dirHandle) {
+            dirHandle = await loadStoredProjectHandle();
+            if (dirHandle) {
+                downloadDirHandle = dirHandle;
+                downloadDirName = dirHandle.name || '';
+                updateDownloadDirButton();
+                window.wosAideDirectoryHandle = dirHandle;
+            }
+        }
+        if (dirHandle) {
+            const granted = await ensureDirectoryPermission(dirHandle);
+            if (granted) return dirHandle;
+        }
+        return null;
+    }
+
+    async function writeBlobToDirectory(dirHandle, fileName, blob) {
+        try {
+            const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+        } catch (error) {
+            console.warn("[DOI PDF Download] Failed to write file:", error);
+            const writeError = new Error(
+                `Could not write ${fileName} to folder ${dirHandle?.name || "selected folder"}: ${error?.message || error}`
+            );
+            writeError.name = "DirectoryWriteError";
+            throw writeError;
+        }
+    }
+
+    async function download_pdf(doi, template, signal, dirHandle) {
+        const rawUrl = template.replace("{doi}", doi);
+        const url = isDoiSidePanelSurface ? new URL(rawUrl, activePageUrl).href : rawUrl;
+        const res = await fetch(url, {
+            signal,
+            credentials: isDoiSidePanelSurface ? "include" : "same-origin"
+        });
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status} ${res.statusText}`.trim());
+        }
+        const blob = await res.blob();
+        const validation = await validatePdfBlob(blob, res.headers.get("content-type") || blob.type);
+        if (validation.status !== "valid") {
+            throw new Error(validation.reason);
+        }
+        if (signal.aborted) {
+            throw new DOMException("Download stopped", "AbortError");
+        }
+
+        const fileName = pdfFileNameForDoi(doi);
+        await withDirectoryLock(dirHandle, `file:${fileName}`, async () => {
+            await writeBlobToDirectory(dirHandle, fileName, blob);
+            try {
+                await recordDownloadedPdf(dirHandle, fileName, doi, url, blob, validation);
+            } catch (error) {
+                console.warn("[DOI PDF Download] PDF saved, but index update failed:", error);
+            }
+        });
+    }
+
+    // ==============================
+    //  批量下载方法
+    // ==============================
+    async function download_batch() {
+        if (activeDownloadController) return;
+        const template = templateInput.value.trim();
+        const lines = parseDoiList(textarea.value);
+
+        if (!lines.length) {
+            log("DOI list is empty");
+            return;
+        }
+
+        if (isDoiSidePanelSurface && !await ensureActivePagePermission()) {
+            log("Access to the active publisher site was not granted.");
+            return;
+        }
+
+        // Resolve and authorize the tab-specific folder while the Download click
+        // still provides a user gesture. Never fall back to Chrome's Downloads folder.
+        const batchDirectoryHandle = await getWritableDirectoryHandle();
+        if (!batchDirectoryHandle) {
+            log("Download folder is unavailable. Click Choose Folder in this tab and select it again.");
+            return;
+        }
+        updateDownloadDelay(true);
+        updateBatchInterval(true);
+        updateBatchSize(true);
+        updateDownloadConcurrency(true);
+        timerInput.value = String(liveDownloadDelayMs / 1000);
+        batchInput.value = String(liveBatchIntervalMs / 1000);
+        batchSizeInput.value = String(liveBatchSize);
+        concurrencyInput.value = String(liveDownloadConcurrency);
+        writeStorage(DOWNLOAD_DELAY_SECONDS_KEY, timerInput.value);
+        writeStorage(BATCH_INTERVAL_SECONDS_KEY, batchInput.value);
+        writeStorage(BATCH_SIZE_KEY, batchSizeInput.value);
+        writeStorage(DOWNLOAD_CONCURRENCY_KEY, concurrencyInput.value);
+        log(`Using ${batchDirectoryHandle.name || downloadDirName}: ${lines.length} DOIs, ${liveDownloadConcurrency} concurrent download${liveDownloadConcurrency === 1 ? "" : "s"}...`);
+        activeDownloadController = new AbortController();
+        const { signal } = activeDownloadController;
+        setDownloadRunning(true);
+        let stopped = false;
+        let directoryFailureMessage = "";
+
+        try {
+            let finishedCount = 0;
+            let batchStart = 0;
+            while (batchStart < lines.length) {
+                const batchSize = liveBatchSize;
+                const batch = lines.slice(batchStart, batchStart + batchSize);
+                const runner = createAdaptiveConcurrentRunner(
+                    batch,
+                    liveDownloadConcurrency,
+                    async (doi) => {
+                        if (signal.aborted) return true;
+                        try {
+                            await download_pdf(doi, template, signal, batchDirectoryHandle);
+                            finishedCount += 1;
+                            log(`${doi} (${finishedCount}/${lines.length} finished)`);
+                        } catch (err) {
+                            if (err?.name === "AbortError") return true;
+                            if (err?.name === "DirectoryWriteError") {
+                                directoryFailureMessage = err.message;
+                                activeDownloadController?.abort();
+                                return true;
+                            }
+                            finishedCount += 1;
+                            log(`Failed: ${doi} (${err?.message || err}; ${finishedCount}/${lines.length} finished)`);
+                        }
+                        return false;
+                    },
+                    async () => {
+                        if (liveDownloadDelayMs <= 0) return signal.aborted;
+                        try {
+                            await waitForLiveDelay(() => liveDownloadDelayMs, signal);
+                            return false;
+                        } catch (err) {
+                            if (err?.name === "AbortError") return true;
+                            throw err;
+                        }
+                    }
+                );
+                activeDownloadRuntime = runner;
+                const workerStopped = await runner.promise;
+                activeDownloadRuntime = null;
+                if (workerStopped || signal.aborted) {
+                    stopped = true;
+                    break;
+                }
+
+                batchStart += batch.length;
+                const hasNextBatch = batchStart < lines.length;
+                if (hasNextBatch) {
+                    log(`${batch.length} done. Next batch starts in ${liveBatchIntervalMs / 1000} seconds...`);
+                    await runBatchCooldown(signal);
+                }
+            }
+        } catch (err) {
+            if (err?.name === "AbortError") stopped = true;
+            else log(`Download interrupted: ${err?.message || err}`);
+        } finally {
+            activeDownloadRuntime = null;
+            activeDownloadController = null;
+            setDownloadRunning(false);
+            cooldownDiv.textContent = "";
+        }
+        log(directoryFailureMessage
+            ? `Download stopped: ${directoryFailureMessage}`
+            : stopped ? "Download stopped." : "All done!");
+    }
+
+    syncBtn.onclick = () => { void syncFromFolder(); };
+    extractBtn.onclick = extractDois;
+    let localFileDialogOpen = false;
+    let lastLocalFileDialogOpenAt = 0;
+    let localFileDialogSafetyTimer = null;
+    const resetLocalFileDialogState = () => {
+        localFileDialogOpen = false;
+        if (localFileDialogSafetyTimer) {
+            window.clearTimeout(localFileDialogSafetyTimer);
+            localFileDialogSafetyTimer = null;
+        }
+    };
+    localFileInput.addEventListener("click", (event) => {
+        const now = Date.now();
+        if (localFileDialogOpen || now - lastLocalFileDialogOpenAt < 800) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            return;
+        }
+        localFileDialogOpen = true;
+        lastLocalFileDialogOpenAt = now;
+        localFileDialogSafetyTimer = window.setTimeout(resetLocalFileDialogState, 60000);
+        window.addEventListener("focus", () => {
+            window.setTimeout(resetLocalFileDialogState, 250);
+        }, { once: true });
+    });
+    localFileInput.addEventListener("cancel", resetLocalFileDialogState);
+    localFileInput.onchange = async () => {
+        const selectedFiles = Array.from(localFileInput.files || []);
+        resetLocalFileDialogState();
+        await extractDoisFromFiles(selectedFiles, "selected");
+        localFileInput.value = "";
+    };
+    btn.onclick = download_batch;
+    stopBtn.onclick = () => {
+        if (!activeDownloadController) return;
+        log("Stopping download...");
+        activeDownloadController.abort();
+    };
+
+    selectDownloadDirBtn.onclick = async () => {
+        try {
+            await chooseDownloadDirectory();
+            updateDownloadDirButton();
+        } catch (error) {
+            if (error && (error.name === 'AbortError' || error.message === 'The user aborted a request.')) {
+                return;
+            }
+            log('Folder selection failed: ' + (error && error.message ? error.message : error));
+        }
+    };
+
+    loadStoredProjectHandle().then((handle) => {
+        if (!handle) return;
+        downloadDirHandle = handle;
+        downloadDirName = handle.name || '';
+        updateDownloadDirButton();
+        window.wosAideDirectoryHandle = handle;
+    });
+
+    // 拖动和销毁
+    let dragger = null;
+    const ensurePanelInView = () => {
+        if (isDoiSidePanelSurface) return;
+        const width = box.offsetWidth || PANEL_WIDTH;
+        const height = box.offsetHeight || 360;
+        const clamped = window.clampPanelPosition({
+            top: box.style.top || savedTop,
+            left: box.style.left || savedLeft || `${window.innerWidth - PANEL_WIDTH - PANEL_MARGIN}px`,
+            defaultTop: 120,
+            defaultLeft: window.innerWidth - PANEL_WIDTH - PANEL_MARGIN,
+            width,
+            height,
+            margin: 8
+        });
+        box.style.top = `${Math.round(clamped.top)}px`;
+        box.style.left = `${Math.round(clamped.left)}px`;
+        box.style.right = "auto";
+        writeStorage(POS_TOP_KEY, box.style.top);
+        writeStorage(POS_LEFT_KEY, box.style.left);
+    };
+
+    if (!isDoiSidePanelSurface && typeof window.createFreeDragger === "function") {
+        dragger = window.createFreeDragger(box, titleBar, {
+            topKey: POS_TOP_KEY,
+            leftKey: POS_LEFT_KEY
+        });
+        box.__dragger = dragger;
+    }
+    ensurePanelInView();
+
+    // 清理函数
+    const cleanup = () => {
+        console.log("[DOI PDF Download] Cleaning up resources...");
+        dragger?.destroy();
+        document.removeEventListener("keydown", keydownHandler);
+        document.removeEventListener("__DOI_PDF_DOWNLOAD_VISIBILITY__", visibilityHandler);
+        box.remove();
+        console.log("[DOI PDF Download] Resources cleaned up");
+    };
+
+    if (!isDoiSidePanelSurface) {
+        closeBtn.addEventListener("click", () => {
+            cleanup();
+        });
+    }
+
+    // 快捷键切换显示/隐藏 (Ctrl+4)
+    const keydownHandler = (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "4") {
+            e.preventDefault();
+            const isVisible = box.style.display !== "none";
+            box.style.display = isVisible ? "none" : "flex";
+            console.log(`[DOI PDF Download] Toggle visibility: ${!isVisible}`);
+        }
+    };
+    if (!isDoiSidePanelSurface) document.addEventListener("keydown", keydownHandler);
+
+    // 监听来自 content script 的可见性控制事件
+    const visibilityHandler = (e) => {
+        if (isDoiSidePanelSurface) return;
+        console.log("[DOI PDF Download] Visibility event received:", e.detail);
+        if (e.detail && typeof e.detail.visible === 'boolean') {
+            const visible = e.detail.visible;
+            const beforeDisplay = box.style.display;
+            box.style.display = visible ? "flex" : "none";
+            const afterDisplay = box.style.display;
+            console.log(`[DOI PDF Download] Display changed: ${beforeDisplay} -> ${afterDisplay}, box exists: ${!!box}, box in DOM: ${document.contains(box)}`);
+            if (visible) {
+                ensurePanelInView();
+            }
+        }
+    };
+    if (!isDoiSidePanelSurface) {
+        document.addEventListener("__DOI_PDF_DOWNLOAD_VISIBILITY__", visibilityHandler);
+    }
+    
+    console.log("[DOI PDF Download] Panel initialized and event listeners attached");
+
+    console.log("[DOI PDF Download] Panel initialized successfully");
+})();

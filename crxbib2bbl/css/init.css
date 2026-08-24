@@ -3,8 +3,10 @@
     display: none;
 }
 
+/* 功能面板 */
 #init {
     position: fixed;
+    z-index: 9999;
     top: -98%;
     left: 3%;
     width: 94%;
@@ -20,11 +22,9 @@
     animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
 }
 
-
-
 @keyframes init-hiden {
     0% {
-        top: 5%;
+        top: 0%;
     }
 
     100% {
@@ -32,13 +32,13 @@
     }
 }
 
-@keyframes init-show{
+@keyframes init-show {
     0% {
         top: -150%;
     }
 
     100% {
-        top: 5%;
+        top: 0%;
     }
 }
 
@@ -46,14 +46,15 @@
     animation-name: init-hiden;
 }
 
-.initshow{
+.initshow {
     animation-name: init-show;
 }
 
 
 #tolgo {
     position: fixed;
-    left: 35%;
+    z-index: 9999;
+    left: 15%;
     top: 0%;
     border: 2px solid #ffffffc5;
     border-top: 0pt solid #ffffff76;
@@ -113,22 +114,29 @@
 }
 
 
-.mustinfo {
-    width: 90%;
-    border: none;
-    background-color: #864879;
-    font-size: 10pt;
-    font-weight: bold;
-    color: #ffffff;
-    padding-left: 5pt;
-}
 
 .mustesc {
-    width: 220px;
+    width: auto;
     background-color: #cdf007;
+    /* 防止文字换行 */
+    white-space: nowrap;
     font-size: 10pt;
     font-weight: bold;
     color: #1c1c1c;
     padding-left: 5pt;
     padding-right: 5pt;
+}
+
+
+.mustinfo {
+    border: none;
+    /* 右边元素填充剩余空间 */
+    flex-grow: 1;
+    /* 防止文字换行 */
+    white-space: nowrap;
+    background-color: #864879;
+    font-size: 10pt;
+    font-weight: bold;
+    color: #ffffff;
+    padding-left: 5pt;
 }

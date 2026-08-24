@@ -16,7 +16,7 @@ window.meun['home'].innerHTML = `
 <span style="font-size: 14px;">,</span>
 <a href="https://github.com/theajack/cnchar" target="_blank" style="font-size: 14px;">CNChar </a>
 <p>
-<p style="font-size:10pt;">last update: 2023-06-10 </p>
+<p style="font-size:10pt;">last update: 2024-04-21 </p>
 </div>
 `
 
